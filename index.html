@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Young Farmers Agencies LTD</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+
+    <div id="splash-screen" class="splash-overlay">
+        <div class="splash-content">
+            <h1 class="splash-title">Young Farmers Agencies LTD</h1>
+            <p class="splash-tagline">...feeding the future</p>
+            <div class="splash-circle"></div>
+        </div>
+    </div>
+
+    <div id="auth-screen" class="screen hidden">
+        <div class="auth-container">
+            <h2 class="company-name">Young Farmers Agencies LTD</h2>
+            <div class="auth-toggle">
+                <button id="show-signin" class="active">Sign In</button>
+                <button id="show-signup">Sign Up</button>
+            </div>
+
+            <form id="signin-form" class="auth-form">
+                <input type="email" id="signin-email" placeholder="Email" required>
+                <input type="password" id="signin-password" placeholder="Password" required>
+                <button type="submit" class="btn-primary">Sign In</button>
+            </form>
+
+            <form id="signup-form" class="auth-form hidden">
+                <input type="text" id="signup-name" placeholder="Full Name" required>
+                <input type="email" id="signup-email" placeholder="Email" required>
+                <input type="password" id="signup-password" placeholder="Password" required>
+                <button type="submit" class="btn-primary">Sign Up</button>
+            </form>
+
+            <div class="divider"><span>OR</span></div>
+            <button id="google-signin" class="btn-google">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" alt="">
+                Sign in with Google
+            </button>
+        </div>
+    </div>
+
+    <div id="pending-screen" class="screen hidden">
+        <div class="status-container">
+            <h2>Account Pending</h2>
+            <p>Your account is currently awaiting approval from the Admin. Please contact the manager to activate your access.</p>
+            <button id="btn-logout-pending" class="btn-secondary">Logout</button>
+        </div>
+    </div>
+
+    <div id="app-container" class="screen hidden">
+        <header class="app-header">
+            <div class="header-left">
+                <span id="user-display-name">User</span>
+                <span id="user-role-badge" class="badge">Role</span>
+            </div>
+            <div class="header-right">
+                <button id="btn-logout" class="btn-logout-icon">Logout</button>
+            </div>
+        </header>
+
+        <main id="main-content">
+            <section id="dashboard" class="view">
+                <div class="dashboard-header">
+                    <h2>Dashboard</h2>
+                    <input type="date" id="global-date-selector">
+                </div>
+                
+                <div class="shop-grid" id="shop-buttons-container">
+                    </div>
+
+                <div id="manager-tools" class="hidden">
+                    <h3>Management Views</h3>
+                    <div class="tools-grid">
+                        <button class="tool-btn" data-view="total-sales">Total Sales</button>
+                        <button class="tool-btn" data-view="debtors-view">Debtors</button>
+                        <button class="tool-btn" data-view="creditors-view">Creditors</button>
+                        <button class="tool-btn" data-view="stock-value-view">Stock Value</button>
+                        <button class="tool-btn" data-view="products-view">Products</button>
+                        <button class="tool-btn" data-view="all-clients">All Clients</button>
+                        <button id="admin-panel-btn" class="tool-btn hidden" data-view="admin-panel">Admin Panel</button>
+                    </div>
+                    <div class="export-actions">
+                        <button id="btn-export-doc1" class="btn-export">Export Stock Report (Doc1)</button>
+                        <button id="btn-export-doc2" class="btn-export">Export Value Book (Doc2)</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="shop-view" class="view hidden">
+                <button class="btn-back">← Back to Dashboard</button>
+                <h2 id="current-shop-name">Shop Name</h2>
+                
+                <div id="read-only-warning" class="warning-box hidden">
+                    ⚠️ You can only view stock quantities for other shops. You cannot edit.
+                </div>
+
+                <div class="table-container">
+                    <div id="opening-stock-warning" class="warning-box hidden">
+                        ⚠️ First time setup: Please enter your Opening Stock quantities below.
+                    </div>
+                    <table id="stock-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Feed Name</th>
+                                <th>Opening Stock</th>
+                                <th>Restocking</th>
+                                <th>Closing Stock</th>
+                                <th>Bags Sold</th>
+                                <th class="manager-col">Price</th>
+                                <th class="manager-col">Sales Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stock-table-body">
+                            </tbody>
+                        <tfoot>
+                            <tr id="table-totals">
+                                <td colspan="4">TOTALS</td>
+                                <td id="total-closing-qty">0</td>
+                                <td id="total-sold-qty">0</td>
+                                <td class="manager-col"></td>
+                                <td id="total-sales-val" class="manager-col">0</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div id="shop-actions" class="action-bar">
+                    <button id="btn-save-opening" class="btn-save hidden">Save Opening Stock</button>
+                    <button id="btn-copy-stock" class="btn-secondary hidden">Copy to Clipboard</button>
+                </div>
+
+                <div id="transaction-area" class="hidden">
+                    <div class="form-accordion">
+                        <details>
+                            <summary>Record a Sale (Cash)</summary>
+                            <form id="form-sale" class="trans-form">
+                                <input type="text" name="client" placeholder="Client Name" required>
+                                <select name="feed" class="feed-select" required></select>
+                                <input type="number" name="bags" placeholder="Bags" step="0.1" min="0.1" required>
+                                <input type="number" name="price" placeholder="Price" readonly class="readonly-input">
+                                <input type="number" name="discount" placeholder="Discount (KSh)" min="0" required value="0">
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <details>
+                            <summary>Record Restocking (Supplier)</summary>
+                            <form id="form-restock" class="trans-form">
+                                <select name="feed" class="feed-select" required></select>
+                                <input type="number" name="bags" placeholder="Number of Bags" required>
+                                <input type="text" name="supplier" placeholder="Supplier Name">
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <details>
+                            <summary>Transfers In (From Other Shop)</summary>
+                            <form id="form-transfer-in" class="trans-form">
+                                <select name="feed" class="feed-select" required></select>
+                                <input type="number" name="bags" placeholder="Number of Bags" required>
+                                <select name="fromShop" class="shop-select" required></select>
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <details>
+                            <summary>Transfers Out (To Other Shop)</summary>
+                            <form id="form-transfer-out" class="trans-form">
+                                <select name="feed" class="feed-select" required></select>
+                                <input type="number" name="bags" placeholder="Number of Bags" required>
+                                <select name="toShop" class="shop-select" required></select>
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <details id="details-creditor-release">
+                            <summary>Feeds Released to Creditors</summary>
+                            <form id="form-creditor-release" class="trans-form">
+                                <select name="creditor" id="select-creditor-list" required></select>
+                                <select name="feed" class="feed-select" required></select>
+                                <input type="number" name="bags" placeholder="Number of Bags" required>
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <details>
+                            <summary>Sales Made on Credit</summary>
+                            <form id="form-credit-sale" class="trans-form">
+                                <input type="text" name="debtor" placeholder="Debtor Name" required>
+                                <select name="feed" class="feed-select" required></select>
+                                <input type="number" name="bags" placeholder="Bags" step="0.1" min="0.1" required>
+                                <input type="number" name="price" placeholder="Price" readonly class="readonly-input">
+                                <input type="number" name="discount" placeholder="Discount (KSh)" min="0" required value="0">
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <details>
+                            <summary>Prepayments Made</summary>
+                            <form id="form-prepayment" class="trans-form">
+                                <input type="text" name="client" placeholder="Client Name" required>
+                                <input type="number" name="amount" placeholder="Amount Paid" required>
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <details id="details-debt-payment">
+                            <summary>Payments Made Towards Debts</summary>
+                            <form id="form-debt-payment" class="trans-form">
+                                <select name="debtor" id="select-debtor-list" required></select>
+                                <input type="number" name="amount" placeholder="Amount Paid" required>
+                                <select name="method" required>
+                                    <option value="Cash">Cash</option>
+                                    <option value="M-Pesa">M-Pesa</option>
+                                    <option value="Bank">Bank</option>
+                                </select>
+                                <div class="form-buttons">
+                                    <button type="submit" data-action="save">Save</button>
+                                    <button type="button" data-action="new">Add New Entry</button>
+                                </div>
+                            </form>
+                        </details>
+                    </div>
+
+                    <div class="history-section">
+                        <h3>Recorded Today</h3>
+                        <div id="history-container">
+                            </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="manager-views-container" class="view hidden">
+                <button class="btn-back">← Back to Dashboard</button>
+                <div id="manager-view-content">
+                    </div>
+            </section>
+
+        </main>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js');
+        }
+    </script>
+</body>
+</html>

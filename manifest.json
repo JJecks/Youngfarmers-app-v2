@@ -1,0 +1,21 @@
+{
+  "name": "Young Farmers Agencies LTD",
+  "short_name": "Young Farmers",
+  "description": "Stock Management System for Young Farmers Agencies LTD",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#1b5e20",
+  "theme_color": "#2e7d32",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2372/2372244.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2372/2372244.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,8 +1,36 @@
 /**
- * Young Farmers Agencies LTD - Complete Application Logic
+ * Young Farmers Agencies LTD - Final Production Logic (Robust Version)
  */
 
-// --- 1. CONSTANTS & DATA ---
+// --- 1. UI UTILITIES (Defined first to prevent ReferenceErrors) ---
+function showScreen(id) {
+    const screen = document.getElementById(id);
+    if (!screen) {
+        console.error(`Screen with ID "${id}" not found.`);
+        return;
+    }
+    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    screen.classList.remove('hidden');
+}
+
+function showToast(message, type) {
+    const container = document.getElementById('toast-container');
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    div.textContent = message;
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 3000);
+}
+
+function hideSplashScreen() {
+    const s = document.getElementById('splash-screen');
+    if (s) {
+        s.style.opacity = '0';
+        setTimeout(() => s.remove(), 800);
+    }
+}
+
+// --- 2. CONSTANTS & DATA ---
 const SHOPS = ["Usigu", "Port Victoria", "Mbita", "Usenge", "Lwanda Kotieno", "Obambo", "Sori"];
 const PRODUCTS = [
     { id: "STARTER MASH", name: "Starter Mash", cost: 4240, sales: 4600 },
@@ -16,10 +44,10 @@ const PRODUCTS = [
 
 let currentUser = null;
 let currentShop = null;
-let selectedDate = ""; // Managed by the date picker
+let selectedDate = ""; 
 let dailyData = null;
 
-// --- 2. INITIALIZATION ---
+// --- 3. INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     const dateInput = document.getElementById('global-date-selector');
     const today = new Date();
@@ -33,27 +61,31 @@ document.addEventListener('DOMContentLoaded', () => {
 function initAuth() {
     auth.onAuthStateChanged(async (user) => {
         if (user) {
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            if (!userDoc.exists) {
-                const isAdmin = user.email === "jeckstom777@gmail.com";
-                currentUser = {
-                    uid: user.uid,
-                    email: user.email,
-                    name: user.displayName || "New User",
-                    role: isAdmin ? "manager_full" : "pending",
-                    status: isAdmin ? "active" : "pending",
-                    shop: null
-                };
-                await db.collection('users').doc(user.uid).set(currentUser);
-            } else {
-                currentUser = userDoc.data();
-            }
+            try {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                if (!userDoc.exists) {
+                    const isAdmin = user.email === "jeckstom777@gmail.com";
+                    currentUser = {
+                        uid: user.uid,
+                        email: user.email,
+                        name: user.displayName || "User",
+                        role: isAdmin ? "manager_full" : "pending",
+                        status: isAdmin ? "active" : "pending",
+                        shop: null
+                    };
+                    await db.collection('users').doc(user.uid).set(currentUser);
+                } else {
+                    currentUser = userDoc.data();
+                }
 
-            if (currentUser.status === "pending") {
-                showScreen('pending-screen');
-            } else {
-                showScreen('app-container');
-                renderDashboard();
+                if (currentUser.status === "pending") {
+                    showScreen('pending-screen');
+                } else {
+                    showScreen('app-container');
+                    renderDashboard();
+                }
+            } catch (err) {
+                console.error("Auth Error:", err);
             }
         } else {
             showScreen('auth-screen');
@@ -62,7 +94,7 @@ function initAuth() {
     });
 }
 
-// --- 3. CORE STOCK LOGIC ---
+// --- 4. DATA LOGIC ---
 async function loadDailyData() {
     const doc = await db.collection('shops').doc(currentShop).collection('daily').doc(selectedDate).get();
     dailyData = doc.exists ? doc.data() : {
@@ -70,67 +102,75 @@ async function loadDailyData() {
         transfersIn: [], transfersOut: [], creditorReleases: [], prepayments: [], debtPayments: []
     };
 
-    // If no opening stock today, look for yesterday's closing
     if (Object.keys(dailyData.openingStock).length === 0) {
         const yesterday = getPreviousDay(selectedDate);
         const yDoc = await db.collection('shops').doc(currentShop).collection('daily').doc(yesterday).get();
         if (yDoc.exists) {
             dailyData.openingStock = calculateClosingFromData(yDoc.data());
-            await saveDailyData(); // Auto-save yesterday's closing as today's opening
         }
     }
     renderStockTable();
-    renderHistory();
-    updateFormSelectors();
+    updateSelectors();
+}
+
+/** * Total Sales Formula:
+ * (Sales Made + Prepayments + Debt Payments) - (Underpayments + Discounts)
+ */
+function calculateTotalSales(data) {
+    const salesMade = (data.regularSales || []).reduce((s, r) => s + (r.bags * (PRODUCTS.find(p=>p.id===r.feed)?.sales || 0)), 0);
+    const prepayments = (data.prepayments || []).reduce((s, r) => s + (r.amount || 0), 0);
+    const debtPayments = (data.debtPayments || []).reduce((s, r) => s + (r.amount || 0), 0);
+    const underpayments = (data.underpayments || []).reduce((s, r) => s + (r.amount || 0), 0);
+    const discounts = (data.discounts || []).reduce((s, r) => s + (r.amount || 0), 0);
+
+    return (salesMade + prepayments + debtPayments) - (underpayments + discounts);
 }
 
 function calculateClosingFromData(data) {
     const closing = {};
     PRODUCTS.forEach(p => {
-        const opening = data.openingStock[p.id] || 0;
+        const op = data.openingStock[p.id] || 0;
         const restock = (data.restocking || []).filter(r => r.feed === p.id).reduce((s, r) => s + r.bags, 0) +
                         (data.transfersIn || []).filter(t => t.feed === p.id).reduce((s, t) => s + t.bags, 0);
         const sold = (data.regularSales || []).filter(s => s.feed === p.id).reduce((s, r) => s + r.bags, 0) +
                      (data.creditSales || []).filter(s => s.feed === p.id).reduce((s, r) => s + r.bags, 0);
         const out = (data.transfersOut || []).filter(t => t.feed === p.id).reduce((s, t) => s + t.bags, 0);
         const rel = (data.creditorReleases || []).filter(r => r.feed === p.id).reduce((s, r) => s + r.bags, 0);
-        
-        closing[p.id] = opening + restock - sold - out - rel;
+        closing[p.id] = op + restock - sold - out - rel;
     });
     return closing;
 }
 
-// --- 4. TRANSACTION HANDLERS ---
-async function handleFormSubmit(formId, collectionName) {
+// --- 5. TRANSACTION HANDLER ---
+async function handleFormSubmit(formId, type) {
     const form = document.getElementById(formId);
-    const formData = new FormData(form);
-    const entry = {};
-    formData.forEach((value, key) => {
-        entry[key] = (key === 'bags' || key === 'amount' || key === 'price' || key === 'discount') ? parseFloat(value) : value;
+    if (!form) return;
+    const data = Object.fromEntries(new FormData(form));
+    
+    ['bags', 'amount', 'price', 'discount'].forEach(key => {
+        if(data[key]) data[key] = parseFloat(data[key]);
     });
-    entry.timestamp = Date.now();
 
     try {
         await db.runTransaction(async (transaction) => {
             const shopRef = db.collection('shops').doc(currentShop).collection('daily').doc(selectedDate);
             const doc = await transaction.get(shopRef);
-            let data = doc.exists ? doc.data() : dailyData;
+            let sData = doc.exists ? doc.data() : dailyData;
             
-            if (!data[collectionName]) data[collectionName] = [];
-            data[collectionName].push(entry);
-            transaction.set(shopRef, data, { merge: true });
+            if (!sData[type]) sData[type] = [];
+            sData[type].push({...data, timestamp: Date.now()});
+            transaction.set(shopRef, sData, { merge: true });
 
-            // Trigger Automatic Transfer In
-            if (collectionName === 'transfersOut') {
-                const targetRef = db.collection('shops').doc(entry.toShop).collection('daily').doc(selectedDate);
+            if (type === 'transfersOut') {
+                const targetRef = db.collection('shops').doc(data.toShop).collection('daily').doc(selectedDate);
                 const tDoc = await transaction.get(targetRef);
                 let tData = tDoc.exists ? tDoc.data() : { transfersIn: [] };
                 if (!tData.transfersIn) tData.transfersIn = [];
-                tData.transfersIn.push({ feed: entry.feed, bags: entry.bags, fromShop: currentShop, timestamp: Date.now() });
+                tData.transfersIn.push({ feed: data.feed, bags: data.bags, fromShop: currentShop, timestamp: Date.now() });
                 transaction.set(targetRef, tData, { merge: true });
             }
         });
-        showToast("Recorded successfully", "success");
+        showToast("Recorded!", "success");
         form.reset();
         loadDailyData();
     } catch (e) {
@@ -138,93 +178,75 @@ async function handleFormSubmit(formId, collectionName) {
     }
 }
 
-// --- 5. MANAGER VIEWS LOGIC ---
-async function renderManagerView(viewId) {
-    const content = document.getElementById('manager-view-content');
-    content.innerHTML = `<h3>Loading ${viewId.replace('-', ' ')}...</h3>`;
-    showScreen('manager-views-container');
-
-    let html = `<h2>${viewId.replace('-', ' ').toUpperCase()}</h2>`;
-
-    if (viewId === 'total-sales') {
-        html += `<table><thead><tr><th>Shop</th><th>Remaining</th><th>Sold</th><th>Amount</th></tr></thead><tbody>`;
-        let grandTotal = 0;
-        for (const shop of SHOPS) {
-            const doc = await db.collection('shops').doc(shop).collection('daily').doc(selectedDate).get();
-            const data = doc.exists ? doc.data() : { openingStock: {} };
-            const closing = calculateClosingFromData(data);
-            const totalRemaining = Object.values(closing).reduce((a, b) => a + b, 0);
-            const soldBags = (data.regularSales || []).concat(data.creditSales || []).reduce((s, r) => s + r.bags, 0);
-            const amt = (data.regularSales || []).concat(data.creditSales || []).reduce((s, r) => s + (r.bags * (PRODUCTS.find(p=>p.id===r.feed).sales)), 0);
-            grandTotal += amt;
-            html += `<tr><td>${shop}</td><td>${totalRemaining}</td><td>${soldBags}</td><td>${amt.toLocaleString()}</td></tr>`;
-        }
-        html += `</tbody><tfoot><tr><td colspan="3">GRAND TOTAL</td><td>${grandTotal.toLocaleString()}</td></tr></tfoot></table>`;
-    }
-
-    if (viewId === 'stock-value-view') {
-        // Logic for the Stock Value Cards
-        const shopStockValue = 0; // Iterate all shops and multiply closing by cost
-        const debtorsValue = 0; // Sum all credit sales - debt payments
-        const creditorsValue = 0; // Sum all prepayments - releases
-        html = `
-            <div class="value-card"><h4>Debtors Value</h4><p>KSh ${debtorsValue}</p></div>
-            <div class="value-card"><h4>Shop Stock Value</h4><p>KSh ${shopStockValue}</p></div>
-            <div class="value-card highlight"><h4>Net Business Value</h4><p>KSh ${shopStockValue + debtorsValue - creditorsValue}</p></div>
-        `;
-    }
-
-    content.innerHTML = html;
-}
-
-// --- 6. PDF EXPORT (DOC 2: STOCK VALUE BOOK) ---
-async function exportDoc2() {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    
-    // Page 1: Sales Summary
-    doc.text("SALES TOTALS", 105, 20, { align: 'center' });
-    // ... AutoTable logic for summary ...
-
-    doc.addPage();
-    doc.text("DEBTORS", 105, 20, { align: 'center' });
-    // ... AutoTable logic for Debtors ...
-
-    doc.save(`YFarmers Stock Value Book.pdf`);
-}
-
-// --- UTILS ---
+// --- 6. UTILS ---
 function formatDateForFirestore(val) {
     const [y, m, d] = val.split('-');
     return `${d}-${m}-${y}`;
 }
 
-function showSplashScreen() { /* Logic handled in index.html */ }
-function hideSplashScreen() { document.getElementById('splash-screen')?.remove(); }
+function getPreviousDay(dateStr) {
+    const [d, m, y] = dateStr.split('-');
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() - 1);
+    return date.toLocaleDateString('en-GB').replace(/\//g, '-');
+}
+
+function renderDashboard() {
+    const container = document.getElementById('shop-buttons-container');
+    if (!container) return;
+    container.innerHTML = '';
+    SHOPS.forEach(shop => {
+        const btn = document.createElement('button');
+        btn.className = 'shop-btn';
+        btn.textContent = shop;
+        btn.onclick = () => openShop(shop);
+        container.appendChild(btn);
+    });
+
+    document.getElementById('user-display-name').textContent = currentUser.name;
+    document.getElementById('user-role-badge').textContent = currentUser.role.replace('_', ' ');
+}
+
+function updateSelectors() {
+    document.querySelectorAll('.feed-select').forEach(s => {
+        s.innerHTML = PRODUCTS.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    });
+    document.querySelectorAll('.shop-select').forEach(s => {
+        s.innerHTML = SHOPS.filter(sh => sh !== currentShop).map(sh => `<option value="${sh}">${sh}</option>`).join('');
+    });
+}
 
 function setupEventListeners() {
-    // Transaction Save Buttons
-    document.querySelectorAll('.trans-form').forEach(form => {
-        const saveBtn = form.querySelector('[data-action="save"]');
-        if (saveBtn) {
-            saveBtn.onclick = (e) => {
-                e.preventDefault();
-                handleFormSubmit(form.id, form.id.replace('form-', ''));
-            };
+    const logoutBtn = document.getElementById('btn-logout');
+    if (logoutBtn) logoutBtn.onclick = () => auth.signOut();
+
+    const dateSelector = document.getElementById('global-date-selector');
+    if (dateSelector) {
+        dateSelector.onchange = (e) => {
+            selectedDate = formatDateForFirestore(e.target.value);
+            if (currentShop) loadDailyData();
+        };
+    }
+    
+    const forms = {
+        'form-sale': 'regularSales',
+        'form-restock': 'restocking',
+        'form-transfer-in': 'transfersIn',
+        'form-transfer-out': 'transfersOut',
+        'form-creditor-release': 'creditorReleases',
+        'form-credit-sale': 'creditSales',
+        'form-prepayment': 'prepayments',
+        'form-debt-payment': 'debtPayments'
+    };
+
+    Object.entries(forms).forEach(([id, type]) => {
+        const f = document.getElementById(id);
+        if (f) {
+            const btn = f.querySelector('[data-action="save"]');
+            if (btn) btn.onclick = (e) => { e.preventDefault(); handleFormSubmit(id, type); };
         }
     });
 
-    // Manager Tool Buttons
-    document.querySelectorAll('.tool-btn').forEach(btn => {
-        btn.onclick = () => renderManagerView(btn.dataset.view);
-    });
-
-    // Date Selector
-    document.getElementById('global-date-selector').onchange = (e) => {
-        selectedDate = formatDateForFirestore(e.target.value);
-        if (currentShop) loadDailyData();
-    };
-
-    // Logout
-    document.getElementById('btn-logout').onclick = () => auth.signOut();
+    const backBtns = document.querySelectorAll('.btn-back');
+    backBtns.forEach(b => b.onclick = () => showScreen('app-container'));
 }

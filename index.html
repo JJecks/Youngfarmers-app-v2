@@ -3,114 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Young Farmers Agencies LTD</title>
+    <title>Young Farmers Agencies LTD - Stock Management</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <meta name="theme-color" content="#2e7d32">
 </head>
 <body>
-
-    <div id="splash-screen" class="splash-overlay">
-        <div class="splash-content">
-            <h1 class="splash-title">Young Farmers Agencies LTD</h1>
-            <p class="splash-tagline">...feeding the future</p>
-            <div class="splash-circle"></div>
-        </div>
+    <!-- Splash Screen -->
+    <div id="splash-screen" class="splash-screen">
+        <h1 class="splash-title">Young Farmers Agencies LTD</h1>
+        <p class="splash-tagline">...feeding the future</p>
     </div>
 
-    <div id="auth-screen" class="screen hidden">
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="auth-screen" style="display: none;">
         <div class="auth-container">
-            <h2 class="company-name">Young Farmers Agencies LTD</h2>
+            <h2 class="auth-header">Young Farmers Agencies LTD</h2>
+            
             <div class="auth-toggle">
-                <button id="show-signin" class="active">Sign In</button>
-                <button id="show-signup">Sign Up</button>
+                <button id="signin-tab" class="auth-tab active">Sign In</button>
+                <button id="signup-tab" class="auth-tab">Sign Up</button>
             </div>
 
-            <form id="signin-form" class="auth-form">
-                <input type="email" id="signin-email" placeholder="Email" required>
-                <input type="password" id="signin-password" placeholder="Password" required>
-                <button type="submit" class="btn-primary">Sign In</button>
+            <form id="auth-form">
+                <div id="name-field" style="display: none;">
+                    <input type="text" id="auth-name" placeholder="Full Name" required>
+                </div>
+                <input type="email" id="auth-email" placeholder="Email" required>
+                <input type="password" id="auth-password" placeholder="Password" required>
+                <button type="submit" class="btn-primary" id="auth-submit">Sign In</button>
             </form>
 
-            <form id="signup-form" class="auth-form hidden">
-                <input type="text" id="signup-name" placeholder="Full Name" required>
-                <input type="email" id="signup-email" placeholder="Email" required>
-                <input type="password" id="signup-password" placeholder="Password" required>
-                <button type="submit" class="btn-primary">Sign Up</button>
-            </form>
-
-            <div class="divider"><span>OR</span></div>
             <button id="google-signin" class="btn-google">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" alt="">
-                Sign in with Google
+                <span>🔍</span> Sign in with Google
             </button>
         </div>
     </div>
 
-    <div id="pending-screen" class="screen hidden">
-        <div class="status-container">
-            <h2>Account Pending</h2>
-            <p>Your account is currently awaiting approval from the Admin. Please contact the manager to activate your access.</p>
-            <button id="btn-logout-pending" class="btn-secondary">Logout</button>
+    <!-- Pending Approval Screen -->
+    <div id="pending-screen" class="pending-screen" style="display: none;">
+        <div class="pending-container">
+            <div class="pending-icon">⏳</div>
+            <h2>Pending Approval</h2>
+            <p>Your account is awaiting approval from an administrator. You'll be able to access the system once approved.</p>
+            <button id="pending-signout" class="btn-primary">Sign Out</button>
         </div>
     </div>
 
-    <div id="app-container" class="screen hidden">
-        <header class="app-header">
-            <div class="header-left">
-                <span id="user-display-name">User</span>
-                <span id="user-role-badge" class="badge">Role</span>
+    <!-- Main App -->
+    <div id="app" style="display: none;">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left" id="header-home">
+                <h1>Young Farmers Agencies LTD</h1>
+                <p>Stock Management System</p>
             </div>
             <div class="header-right">
-                <button id="btn-logout" class="btn-logout-icon">Logout</button>
+                <div class="user-info">
+                    <div id="user-name" class="user-name"></div>
+                    <div id="user-role" class="user-role"></div>
+                </div>
+                <button id="signout-btn" class="btn-signout">Sign Out</button>
             </div>
         </header>
 
-        <main id="main-content">
-            <section id="dashboard" class="view">
-                <div class="dashboard-header">
-                    <h2>Dashboard</h2>
-                    <input type="date" id="global-date-selector">
-                </div>
-                
-                <div class="shop-grid" id="shop-buttons-container">
-                    </div>
+        <!-- Dashboard -->
+        <div id="dashboard-view" class="view-container">
+            <h2 class="view-title">Dashboard</h2>
+            <div id="dashboard-buttons" class="dashboard-grid"></div>
+        </div>
 
-                <div id="manager-tools" class="hidden">
-                    <h3>Management Views</h3>
-                    <div class="tools-grid">
-                        <button class="tool-btn" data-view="total-sales">Total Sales</button>
-                        <button class="tool-btn" data-view="debtors-view">Debtors</button>
-                        <button class="tool-btn" data-view="creditors-view">Creditors</button>
-                        <button class="tool-btn" data-view="stock-value-view">Stock Value</button>
-                        <button class="tool-btn" data-view="products-view">Products</button>
-                        <button class="tool-btn" data-view="all-clients">All Clients</button>
-                        <button id="admin-panel-btn" class="tool-btn hidden" data-view="admin-panel">Admin Panel</button>
-                    </div>
-                    <div class="export-actions">
-                        <button id="btn-export-doc1" class="btn-export">Export Stock Report (Doc1)</button>
-                        <button id="btn-export-doc2" class="btn-export">Export Value Book (Doc2)</button>
-                    </div>
-                </div>
-            </section>
+        <!-- Shop View -->
+        <div id="shop-view" class="view-container" style="display: none;">
+            <div class="view-header">
+                <h2 id="shop-title" class="view-title"></h2>
+                <input type="date" id="date-selector" class="date-input">
+            </div>
 
-            <section id="shop-view" class="view hidden">
-                <button class="btn-back">← Back to Dashboard</button>
-                <h2 id="current-shop-name">Shop Name</h2>
-                
-                <div id="read-only-warning" class="warning-box hidden">
-                    ⚠️ You can only view stock quantities for other shops. You cannot edit.
-                </div>
+            <div id="first-entry-warning" class="warning-box" style="display: none;">
+                ⚠️ First time setup: Please enter your Opening Stock quantities below.
+            </div>
 
+            <div class="card">
+                <h3 class="card-title">Closing Stock Table</h3>
                 <div class="table-container">
-                    <div id="opening-stock-warning" class="warning-box hidden">
-                        ⚠️ First time setup: Please enter your Opening Stock quantities below.
-                    </div>
-                    <table id="stock-table">
+                    <table id="closing-stock-table" class="data-table">
                         <thead>
                             <tr>
                                 <th>#</th>
@@ -119,168 +99,236 @@
                                 <th>Restocking</th>
                                 <th>Closing Stock</th>
                                 <th>Bags Sold</th>
-                                <th class="manager-col">Price</th>
-                                <th class="manager-col">Sales Total</th>
+                                <th>Selling Price</th>
+                                <th id="sales-total-header" style="display: none;">Sales Total</th>
                             </tr>
                         </thead>
-                        <tbody id="stock-table-body">
-                            </tbody>
-                        <tfoot>
-                            <tr id="table-totals">
-                                <td colspan="4">TOTALS</td>
-                                <td id="total-closing-qty">0</td>
-                                <td id="total-sold-qty">0</td>
-                                <td class="manager-col"></td>
-                                <td id="total-sales-val" class="manager-col">0</td>
-                            </tr>
-                        </tfoot>
+                        <tbody id="closing-stock-body"></tbody>
+                        <tfoot id="closing-stock-footer"></tfoot>
                     </table>
                 </div>
-
-                <div id="shop-actions" class="action-bar">
-                    <button id="btn-save-opening" class="btn-save hidden">Save Opening Stock</button>
-                    <button id="btn-copy-stock" class="btn-secondary hidden">Copy to Clipboard</button>
+                <div class="button-group">
+                    <button id="save-opening-stock" class="btn-primary" style="display: none;">Save Opening Stock</button>
+                    <button id="copy-clipboard" class="btn-secondary" style="display: none;">📋 Copy to Clipboard</button>
                 </div>
+            </div>
 
-                <div id="transaction-area" class="hidden">
-                    <div class="form-accordion">
-                        <details>
-                            <summary>Record a Sale (Cash)</summary>
-                            <form id="form-sale" class="trans-form">
-                                <input type="text" name="client" placeholder="Client Name" required>
-                                <select name="feed" class="feed-select" required></select>
-                                <input type="number" name="bags" placeholder="Bags" step="0.1" min="0.1" required>
-                                <input type="number" name="price" placeholder="Price" readonly class="readonly-input">
-                                <input type="number" name="discount" placeholder="Discount (KSh)" min="0" required value="0">
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
+            <div id="transaction-forms" class="card" style="display: none;">
+                <h3 class="card-title">Record Transactions</h3>
+                <div class="transaction-buttons"></div>
+                <div id="form-container"></div>
+            </div>
 
-                        <details>
-                            <summary>Record Restocking (Supplier)</summary>
-                            <form id="form-restock" class="trans-form">
-                                <select name="feed" class="feed-select" required></select>
-                                <input type="number" name="bags" placeholder="Number of Bags" required>
-                                <input type="text" name="supplier" placeholder="Supplier Name">
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
-
-                        <details>
-                            <summary>Transfers In (From Other Shop)</summary>
-                            <form id="form-transfer-in" class="trans-form">
-                                <select name="feed" class="feed-select" required></select>
-                                <input type="number" name="bags" placeholder="Number of Bags" required>
-                                <select name="fromShop" class="shop-select" required></select>
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
-
-                        <details>
-                            <summary>Transfers Out (To Other Shop)</summary>
-                            <form id="form-transfer-out" class="trans-form">
-                                <select name="feed" class="feed-select" required></select>
-                                <input type="number" name="bags" placeholder="Number of Bags" required>
-                                <select name="toShop" class="shop-select" required></select>
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
-
-                        <details id="details-creditor-release">
-                            <summary>Feeds Released to Creditors</summary>
-                            <form id="form-creditor-release" class="trans-form">
-                                <select name="creditor" id="select-creditor-list" required></select>
-                                <select name="feed" class="feed-select" required></select>
-                                <input type="number" name="bags" placeholder="Number of Bags" required>
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
-
-                        <details>
-                            <summary>Sales Made on Credit</summary>
-                            <form id="form-credit-sale" class="trans-form">
-                                <input type="text" name="debtor" placeholder="Debtor Name" required>
-                                <select name="feed" class="feed-select" required></select>
-                                <input type="number" name="bags" placeholder="Bags" step="0.1" min="0.1" required>
-                                <input type="number" name="price" placeholder="Price" readonly class="readonly-input">
-                                <input type="number" name="discount" placeholder="Discount (KSh)" min="0" required value="0">
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
-
-                        <details>
-                            <summary>Prepayments Made</summary>
-                            <form id="form-prepayment" class="trans-form">
-                                <input type="text" name="client" placeholder="Client Name" required>
-                                <input type="number" name="amount" placeholder="Amount Paid" required>
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
-
-                        <details id="details-debt-payment">
-                            <summary>Payments Made Towards Debts</summary>
-                            <form id="form-debt-payment" class="trans-form">
-                                <select name="debtor" id="select-debtor-list" required></select>
-                                <input type="number" name="amount" placeholder="Amount Paid" required>
-                                <select name="method" required>
-                                    <option value="Cash">Cash</option>
-                                    <option value="M-Pesa">M-Pesa</option>
-                                    <option value="Bank">Bank</option>
-                                </select>
-                                <div class="form-buttons">
-                                    <button type="submit" data-action="save">Save</button>
-                                    <button type="button" data-action="new">Add New Entry</button>
-                                </div>
-                            </form>
-                        </details>
-                    </div>
-
-                    <div class="history-section">
-                        <h3>Recorded Today</h3>
-                        <div id="history-container">
-                            </div>
-                    </div>
+            <div id="recorded-transactions" style="display: none;">
+                <div class="card">
+                    <h3 class="card-title">Recorded Transactions Today</h3>
+                    <div id="transactions-list"></div>
                 </div>
-            </section>
+            </div>
+        </div>
 
-            <section id="manager-views-container" class="view hidden">
-                <button class="btn-back">← Back to Dashboard</button>
-                <div id="manager-view-content">
-                    </div>
-            </section>
+        <!-- Read Only Shop View -->
+        <div id="readonly-shop-view" class="view-container" style="display: none;">
+            <h2 id="readonly-shop-title" class="view-title"></h2>
+            <div class="warning-box">
+                ⚠️ You can only view stock quantities for other shops. You cannot edit.
+            </div>
+            <div class="card">
+                <h3 class="card-title">Stock Available (View Only)</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th style="text-align: right;">Bags Available</th>
+                            </tr>
+                        </thead>
+                        <tbody id="readonly-stock-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
-        </main>
+        <!-- Total Sales View -->
+        <div id="total-sales-view" class="view-container" style="display: none;">
+            <div class="view-header">
+                <h2 class="view-title">Total Sales</h2>
+                <input type="date" id="total-sales-date" class="date-input">
+            </div>
+            <div class="card">
+                <div class="button-group">
+                    <button id="export-doc1" class="btn-primary">📄 Export Doc1 (Stock Report)</button>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Shop Name</th>
+                                <th>Bags Remaining</th>
+                                <th>Bags Sold</th>
+                                <th>Total Sales Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="total-sales-body"></tbody>
+                        <tfoot id="total-sales-footer"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Debtors View -->
+        <div id="debtors-view" class="view-container" style="display: none;">
+            <h2 class="view-title">Debtors</h2>
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Client Name</th>
+                                <th>Feed Type</th>
+                                <th>Bags</th>
+                                <th>Price</th>
+                                <th>Amount</th>
+                                <th>Shop</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="debtors-body"></tbody>
+                        <tfoot id="debtors-footer"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Creditors View -->
+        <div id="creditors-view" class="view-container" style="display: none;">
+            <h2 class="view-title">Creditors</h2>
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Client Name</th>
+                                <th>Amount Prepaid</th>
+                                <th>Shop</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="creditors-body"></tbody>
+                        <tfoot id="creditors-footer"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stock Value View -->
+        <div id="stock-value-view" class="view-container" style="display: none;">
+            <div class="view-header">
+                <h2 class="view-title">Stock Value</h2>
+                <input type="date" id="stock-value-date" class="date-input">
+            </div>
+            
+            <div class="stock-value-cards">
+                <div class="value-card">
+                    <div class="value-label">Debtors Value</div>
+                    <div class="value-amount" id="debtors-value">KSh 0</div>
+                    <div class="value-desc">Money owed to us from credit sales</div>
+                </div>
+                
+                <div class="value-card">
+                    <div class="value-label">Shops Stock Value</div>
+                    <div class="value-amount" id="shops-value">KSh 0</div>
+                    <div class="value-desc">Physical stock in all shops (at cost price)</div>
+                </div>
+                
+                <div class="value-card creditors">
+                    <div class="value-label">Creditors Value</div>
+                    <div class="value-amount" id="creditors-value">KSh 0</div>
+                    <div class="value-desc">Feeds we owe to prepaid clients (at cost price)</div>
+                </div>
+            </div>
+
+            <div class="formula-box">
+                <div class="formula-title">Calculation:</div>
+                <div class="formula-text" id="formula-text">
+                    Net Stock Value = Stock in Shops + Debtors - Creditors
+                </div>
+            </div>
+
+            <div class="net-value-card">
+                <div class="net-value-label">Net Stock Value</div>
+                <div class="net-value-amount" id="net-value">KSh 0</div>
+                <div class="net-value-desc">Total business value after all obligations</div>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <div class="button-group">
+                    <button id="export-doc2" class="btn-primary">📄 Export Doc2 (Stock Value Book)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products View -->
+        <div id="products-view" class="view-container" style="display: none;">
+            <h2 class="view-title">Products</h2>
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Product Name</th>
+                                <th>Cost Price (KSh)</th>
+                                <th>Sales Price (KSh)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="products-body"></tbody>
+                    </table>
+                </div>
+                <div class="button-group">
+                    <button id="save-prices" class="btn-primary">Save Prices</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Clients View -->
+        <div id="all-clients-view" class="view-container" style="display: none;">
+            <h2 class="view-title">All Clients</h2>
+            <div class="card">
+                <div class="filter-group">
+                    <select id="client-shop-filter" class="filter-select">
+                        <option value="">All Shops</option>
+                    </select>
+                    <input type="date" id="client-date-filter" class="date-input">
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Client Name</th>
+                                <th>Feed Type</th>
+                                <th>Bags</th>
+                                <th>Amount Paid</th>
+                                <th>Shop</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-clients-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Panel -->
+        <div id="admin-view" class="view-container" style="display: none;">
+            <h2 class="view-title">Admin Panel</h2>
+            <div id="admin-users" class="admin-grid"></div>
+        </div>
     </div>
 
-    <div id="toast-container"></div>
-
-    <script src="firebase-config.js"></script>
-    <script src="app.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('service-worker.js');
-        }
-    </script>
+    <!-- Firebase SDKs -->
+    <script type="module" src="firebase-config.js"></script>
+    <script type="module" src="app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 </body>
 </html>

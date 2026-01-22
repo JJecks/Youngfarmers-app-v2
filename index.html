@@ -418,6 +418,155 @@
             </div>
         </div>
 
+        <!-- Shop Comparison View -->
+        <div id="shop-comparison-view" class="view-container" style="display: none;">
+            <h2 class="view-title">Shop Comparison & Performance</h2>
+            
+            <!-- Date Range Selector -->
+            <div class="card">
+                <div class="filter-group">
+                    <label style="font-weight: bold; margin-right: 10px;">Period:</label>
+                    <select id="comparison-period" class="filter-select" style="min-width: 150px;">
+                        <option value="7">Last 7 Days</option>
+                        <option value="30" selected>This Month (30 Days)</option>
+                        <option value="90">Last Quarter (90 Days)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Best Performing Shop -->
+            <div class="card" style="background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%); color: white;">
+                <h3 style="color: white; margin-bottom: 15px;">🏆 Best Performing Shop</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+                    <div>
+                        <div style="font-size: 2em; font-weight: bold;" id="best-shop-name">-</div>
+                        <div style="font-size: 1em; opacity: 0.9;">Top performer this period</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.8em; font-weight: bold;" id="best-shop-sales">KSh 0</div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">Total Sales</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="card">
+                <h3 class="card-title">📊 Shop Performance Metrics</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Shop</th>
+                                <th>Total Sales</th>
+                                <th>Bags Sold</th>
+                                <th>Avg Sale/Day</th>
+                                <th>Stock Turnover</th>
+                                <th>Efficiency</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shop-metrics-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Side-by-Side Comparison Chart -->
+            <div class="card">
+                <h3 class="card-title">📈 Sales Comparison</h3>
+                <canvas id="shop-sales-comparison-chart" style="max-height: 400px;"></canvas>
+            </div>
+
+            <!-- Product Mix by Shop -->
+            <div class="card">
+                <h3 class="card-title">🎯 Product Mix Analysis</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Shop</th>
+                                <th>Top Selling Product</th>
+                                <th>Bags Sold</th>
+                                <th>% of Total Sales</th>
+                            </tr>
+                        </thead>
+                        <tbody id="product-mix-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Low Stock Alerts View -->
+        <div id="low-stock-alerts-view" class="view-container" style="display: none;">
+            <h2 class="view-title">Low Stock Alerts & Reorder Recommendations</h2>
+            
+            <!-- Alert Summary -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                <div class="alert-card critical">
+                    <div class="alert-icon">🚨</div>
+                    <div class="alert-number" id="critical-alerts">0</div>
+                    <div class="alert-label">Critical (Out of Stock)</div>
+                </div>
+                <div class="alert-card warning">
+                    <div class="alert-icon">⚠️</div>
+                    <div class="alert-number" id="warning-alerts">0</div>
+                    <div class="alert-label">Warning (Below Threshold)</div>
+                </div>
+                <div class="alert-card good">
+                    <div class="alert-icon">✅</div>
+                    <div class="alert-number" id="good-stock">0</div>
+                    <div class="alert-label">Good Stock Levels</div>
+                </div>
+            </div>
+
+            <!-- Low Stock Items -->
+            <div class="card">
+                <h3 class="card-title">🔔 Current Low Stock Items</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Shop</th>
+                                <th>Product</th>
+                                <th>Current Stock</th>
+                                <th>Threshold</th>
+                                <th>Shortage</th>
+                                <th>Recommended Reorder</th>
+                            </tr>
+                        </thead>
+                        <tbody id="low-stock-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Stock Status by Shop -->
+            <div class="card">
+                <h3 class="card-title">🏪 Stock Status by Shop</h3>
+                <div id="shop-stock-status"></div>
+            </div>
+
+            <!-- Reorder Recommendations -->
+            <div class="card">
+                <h3 class="card-title">📋 Recommended Restock Orders</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Priority</th>
+                                <th>Product</th>
+                                <th>Total Shortage</th>
+                                <th>Shops Affected</th>
+                                <th>Recommended Order</th>
+                                <th>Estimated Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reorder-recommendations-body"></tbody>
+                        <tfoot id="reorder-recommendations-footer"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- Admin Panel -->
         <div id="admin-view" class="view-container" style="display: none;">
             <h2 class="view-title">Admin Panel</h2>

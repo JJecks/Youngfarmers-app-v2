@@ -702,3 +702,38 @@ body {
         padding: 8px;
     }
 }
+
+/* Analytics Charts */
+canvas {
+    max-width: 100%;
+    height: auto !important;
+}
+
+.filter-group label {
+    font-weight: bold;
+    margin-right: 10px;
+}
+
+/* Status badges */
+.status-badge {
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.85em;
+    font-weight: bold;
+    display: inline-block;
+}
+
+.status-current {
+    background: #c8e6c9;
+    color: #2e7d32;
+}
+
+.status-overdue {
+    background: #ffcdd2;
+    color: #c62828;
+}
+
+.status-warning {
+    background: #fff3cd;
+    color: #856404;
+}

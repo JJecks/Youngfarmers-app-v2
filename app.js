@@ -418,7 +418,25 @@ async function loadShopData(shop, date) {
 
         if (yesterdayDoc.exists()) {
             openingStock = calculateClosingStock(yesterdayDoc.data());
-            renderClosingStockTable(shop, date, openingStock, null, false, false);
+            
+            // AUTO-SAVE yesterday's closing as today's opening
+            try {
+                await setDoc(doc(db, 'shops', shop, 'daily', date), { 
+                    openingStock 
+                }, { merge: true });
+                
+                openingStockSaved = true;
+                renderClosingStockTable(shop, date, openingStock, null, true, false);
+                
+                // Show transaction forms immediately
+                if (currentUserData) {
+                    document.getElementById('transaction-forms').style.display = 'block';
+                    document.getElementById('recorded-transactions').style.display = 'block';
+                }
+            } catch (error) {
+                showToast('Error auto-saving opening stock: ' + error.message, 'error');
+                renderClosingStockTable(shop, date, openingStock, null, false, false);
+            }
         } else {
             isFirstEntry = true;
             document.getElementById('first-entry-warning').style.display = 'block';
@@ -731,16 +749,45 @@ async function saveTransaction(shop, date, collection, data) {
         const transactionId = Date.now().toString();
         const transactionData = { ...data, timestamp: new Date().toISOString() };
         
+        console.log('Attempting to save transaction:', {
+            shop,
+            date,
+            collection,
+            data: transactionData
+        });
+        
+        // Get existing document first
+        const shopDoc = await getDoc(shopDocRef);
+        const existingData = shopDoc.exists() ? shopDoc.data() : {};
+        
+        console.log('Existing data:', existingData);
+        
+        // Build the updated collection
+        const existingCollection = existingData[collection] || {};
+        const updatedCollection = {
+            ...existingCollection,
+            [transactionId]: transactionData
+        };
+        
+        // Save with the new transaction
         await setDoc(shopDocRef, {
-            [collection]: {
-                [transactionId]: transactionData
-            }
-        }, { merge: true });
+            ...existingData,
+            [collection]: updatedCollection
+        });
+        
+        console.log('Transaction saved successfully to Firestore');
 
+        // Handle transfers out
         if (collection === 'transfersOut' && data.toShop) {
             const destShopRef = doc(db, 'shops', data.toShop, 'daily', date);
+            const destShopDoc = await getDoc(destShopRef);
+            const destData = destShopDoc.exists() ? destShopDoc.data() : {};
+            
+            const destTransfersIn = destData.transfersIn || {};
             await setDoc(destShopRef, {
+                ...destData,
                 transfersIn: {
+                    ...destTransfersIn,
                     [transactionId]: {
                         feedType: data.feedType,
                         bags: data.bags,
@@ -748,13 +795,14 @@ async function saveTransaction(shop, date, collection, data) {
                         timestamp: new Date().toISOString()
                     }
                 }
-            }, { merge: true });
+            });
         }
 
         showToast('Transaction saved successfully!', 'success');
         document.getElementById('form-container').innerHTML = '';
         loadShopData(shop, date);
     } catch (error) {
+        console.error('Error saving transaction:', error);
         showToast('Error saving transaction: ' + error.message, 'error');
     }
 }

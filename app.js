@@ -80,6 +80,10 @@ function getPreviousDate(dateStr) {
     return formatDate(date);
 }
 
+function formatBags(number) {
+    return number % 1 === 0 ? number.toString() : number.toFixed(1);
+}
+
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
     toast.textContent = message;
@@ -149,7 +153,11 @@ function setupAppListeners() {
     document.getElementById('signout-btn').addEventListener('click', async () => {
         await signOut(auth);
         showToast('Signed out successfully!', 'success');
+        setTimeout(() => {
+            window.location.reload();
+        }, 500);
     });
+
     document.getElementById('header-home').addEventListener('click', () => {
         loadDashboard();
     });
@@ -252,6 +260,9 @@ function setupAuthListeners() {
     });
         document.getElementById('pending-signout').addEventListener('click', async () => {
             await signOut(auth);
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
     });
 }
 function loadDashboard() {
@@ -430,7 +441,7 @@ async function loadReadOnlyShopView(shop) {
             const row = tbody.insertRow();
             row.innerHTML = `
                 <td>${product.name}</td>
-                <td style="text-align: right; font-weight: bold;">${(closing[product.id] || 0).toFixed(1)}</td>
+                <td style="text-align: right; font-weight: bold;">${formatBags(closing[product.id] || 0)}</td>
             `;
         });
     } else {
@@ -438,7 +449,7 @@ async function loadReadOnlyShopView(shop) {
             const row = tbody.insertRow();
             row.innerHTML = `
                 <td>${product.name}</td>
-                <td style="text-align: right; font-weight: bold;">0.0</td>
+                <td style="text-align: right; font-weight: bold;">0</td>
             `;
         });
     }
@@ -473,11 +484,11 @@ function renderClosingStockTable(shop, date, openingStock, shopData, saved, edit
                     `<input type="number" step="0.1" min="0" value="${opening}" 
                      class="opening-stock-input" data-product="${product.id}" 
                      style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 3px; text-align: right;">` :
-                    opening.toFixed(1)}
+                    formatBags(opening)}
             </td>
-            <td style="text-align: right;">${restocking.toFixed(1)}</td>
-            <td style="text-align: right; font-weight: bold; color: #2e7d32;">${closing.toFixed(1)}</td>
-            <td style="text-align: right;">${sold.toFixed(1)}</td>
+            <td style="text-align: right;">${formatBags(restocking)}</td>
+            <td style="text-align: right; font-weight: bold; color: #2e7d32;">${formatBags(closing)}</td>
+            <td style="text-align: right;">${formatBags(sold)}</td>
             <td style="text-align: right;">KSh ${product.sales.toLocaleString()}</td>
             ${currentUserData.role !== 'attendant' ? 
                 `<td style="text-align: right; font-weight: bold;">KSh ${salesTotal.toLocaleString()}</td>` : ''}
@@ -487,7 +498,7 @@ function renderClosingStockTable(shop, date, openingStock, shopData, saved, edit
     const footerRow = tfoot.insertRow();
     footerRow.innerHTML = `
         <td colspan="4" style="text-align: left;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold; color: #2e7d32;">${totalClosing.toFixed(1)}</td>
+        <td style="text-align: right; font-weight: bold; color: #2e7d32;">${formatBags(totalClosing)}</td>
         <td colspan="${currentUserData.role !== 'attendant' ? 1 : 2}"></td>
         ${currentUserData.role !== 'attendant' ? 
             `<td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalSales.toLocaleString()}</td>` : ''}
@@ -544,18 +555,18 @@ function setupOpeningStockSave(shop, date, saved, isFirst) {
         const shopDocRef = doc(db, 'shops', shop, 'daily', date);
         const shopDoc = await getDoc(shopDocRef);
         const closing = calculateClosingStock(shopDoc.data());
-        
+    
         let text = `Closing Stock as at ${formatDateDisplay(date)}\n\n`;
         let totalBags = 0;
-        
+    
         productsData.forEach(product => {
             const bags = closing[product.id] || 0;
             totalBags += bags;
-            text += `${product.name} - ${bags.toFixed(1)} bags\n`;
+            text += `${product.name} - ${formatBags(bags)} bags\n`;
         });
-        
-        text += `\nTotal bags - ${totalBags.toFixed(1)} bags`;
-        
+    
+        text += `\nTotal bags - ${formatBags(totalBags)} bags`;
+    
         navigator.clipboard.writeText(text);
         showToast('Copied to clipboard!', 'success');
     };
@@ -565,39 +576,125 @@ function renderRecordedTransactions(shopData, shop, date) {
     container.innerHTML = '';
 
     const sections = [
-        { title: 'Regular Sales', data: shopData.regularSales, color: '#2e7d32' },
-        { title: 'Credit Sales', data: shopData.creditSales, color: '#c62828' },
-        { title: 'Restocking', data: shopData.restocking, color: '#1976d2' },
-        { title: 'Transfers In', data: shopData.transfersIn, color: '#7b1fa2' },
-        { title: 'Transfers Out', data: shopData.transfersOut, color: '#d32f2f' },
-        { title: 'Creditor Releases', data: shopData.creditorReleases, color: '#f57c00' },
-        { title: 'Prepayments', data: shopData.prepayments, color: '#388e3c' },
-        { title: 'Debt Payments', data: shopData.debtPayments, color: '#0097a7' }
+        { title: 'Regular Sales', collection: 'regularSales', data: shopData.regularSales, color: '#2e7d32' },
+        { title: 'Credit Sales', collection: 'creditSales', data: shopData.creditSales, color: '#c62828' },
+        { title: 'Restocking', collection: 'restocking', data: shopData.restocking, color: '#1976d2' },
+        { title: 'Transfers In', collection: 'transfersIn', data: shopData.transfersIn, color: '#7b1fa2' },
+        { title: 'Transfers Out', collection: 'transfersOut', data: shopData.transfersOut, color: '#d32f2f' },
+        { title: 'Creditor Releases', collection: 'creditorReleases', data: shopData.creditorReleases, color: '#f57c00' },
+        { title: 'Prepayments', collection: 'prepayments', data: shopData.prepayments, color: '#388e3c' },
+        { title: 'Debt Payments', collection: 'debtPayments', data: shopData.debtPayments, color: '#0097a7' }
     ];
+
+    const canDelete = currentUserData.role === 'manager_full';
 
     sections.forEach(section => {
         if (section.data && Object.keys(section.data).length > 0) {
             const div = document.createElement('div');
             div.style.marginBottom = '20px';
+            
+            const transactionItems = Object.entries(section.data).map(([key, val]) => {
+                const product = productsData.find(p => p.id === val.feedType);
+                const productName = product ? product.name : val.feedType;
+                
+                const transactionDetails = Object.entries(val).map(([k, v]) => {
+                    if (k === 'timestamp') return ''; // Skip timestamp display
+                    if (k === 'feedType') return `${k}: ${productName}`;
+                    return `${k}: ${v}`;
+                }).filter(Boolean).join(', ');
+                
+                const deleteBtn = canDelete ? 
+                    `<button onclick="deleteTransaction('${shop}', '${date}', '${section.collection}', '${key}')" 
+                     style="margin-left: 10px; padding: 5px 10px; background: #d32f2f; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85em;">
+                     ❌ Delete
+                     </button>` : '';
+                
+                return `<div style="padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                    <span>${transactionDetails}</span>
+                    ${deleteBtn}
+                </div>`;
+            }).join('');
+            
             div.innerHTML = `
                 <h4 style="color: ${section.color}; margin-bottom: 10px;">${section.title}</h4>
                 <div style="background: #f9f9f9; padding: 10px; border-radius: 5px;">
-                    ${Object.entries(section.data).map(([key, val]) => {
-                        const product = productsData.find(p => p.id === val.feedType);
-                        const productName = product ? product.name : val.feedType;
-                        return `<div style="padding: 5px; border-bottom: 1px solid #eee;">
-                            ${Object.entries(val).map(([k, v]) => {
-                                if (k === 'feedType') return `${k}: ${productName}`;
-                                return `${k}: ${v}`;
-                            }).join(', ')}
-                        </div>`;
-                    }).join('')}
+                    ${transactionItems}
                 </div>
             `;
             container.appendChild(div);
         }
     });
 }
+
+async function deleteTransaction(shop, date, collection, transactionId) {
+    // Double check permission
+    if (currentUserData.role !== 'manager_full') {
+        showToast('You do not have permission to delete transactions', 'error');
+        return;
+    }
+
+    const confirmMsg = `Are you sure you want to delete this transaction?\n\nThis action cannot be undone and will update stock calculations.`;
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    try {
+        const shopDocRef = doc(db, 'shops', shop, 'daily', date);
+        const shopDoc = await getDoc(shopDocRef);
+        
+        if (!shopDoc.exists()) {
+            showToast('Transaction not found', 'error');
+            return;
+        }
+
+        const data = shopDoc.data();
+        
+        // Check if this is a transfer out - need to delete corresponding transfer in
+        if (collection === 'transfersOut' && data.transfersOut && data.transfersOut[transactionId]) {
+            const transferData = data.transfersOut[transactionId];
+            const destinationShop = transferData.toShop;
+            
+            // Delete the corresponding transfer in from destination shop
+            if (destinationShop) {
+                const destShopRef = doc(db, 'shops', destinationShop, 'daily', date);
+                const destShopDoc = await getDoc(destShopRef);
+                
+                if (destShopDoc.exists()) {
+                    const destData = destShopDoc.data();
+                    if (destData.transfersIn && destData.transfersIn[transactionId]) {
+                        const updatedTransfersIn = { ...destData.transfersIn };
+                        delete updatedTransfersIn[transactionId];
+                        
+                        await updateDoc(destShopRef, {
+                            transfersIn: updatedTransfersIn
+                        });
+                    }
+                }
+            }
+        }
+
+        // Delete the transaction from current shop
+        const updatedCollection = { ...data[collection] };
+        delete updatedCollection[transactionId];
+        
+        await updateDoc(shopDocRef, {
+            [collection]: updatedCollection
+        });
+
+        showToast('Transaction deleted successfully!', 'success');
+        
+        // Reload the shop data to refresh everything
+        loadShopData(shop, date);
+        
+    } catch (error) {
+        console.error('Error deleting transaction:', error);
+        showToast('Error deleting transaction: ' + error.message, 'error');
+    }
+}
+
+// Make deleteTransaction available globally
+window.deleteTransaction = deleteTransaction;
 
 function setupTransactionForms(shop) {
     const transactionButtons = document.querySelector('.transaction-buttons');
@@ -1043,18 +1140,25 @@ async function loadDebtorsView() {
     showView('debtors-view');
     const tbody = document.getElementById('debtors-body');
     const tfoot = document.getElementById('debtors-footer');
+    const summaryTbody = document.getElementById('debtors-summary-body');
+    const summaryTfoot = document.getElementById('debtors-summary-footer');
+    
     tbody.innerHTML = '';
     tfoot.innerHTML = '';
+    summaryTbody.innerHTML = '';
+    summaryTfoot.innerHTML = '';
 
     let totalAmount = 0;
+    const debtorBalances = {}; // Track per debtor: { name: { owed, paid } }
 
+    // Collect all credit sales
     for (const shop of SHOPS) {
         const shopQuery = query(collection(db, 'shops', shop, 'daily'));
         const snapshot = await getDocs(shopQuery);
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const date = doc.id;
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            const date = docSnapshot.id;
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
@@ -1062,11 +1166,17 @@ async function loadDebtorsView() {
                     const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
                     totalAmount += amount;
 
+                    // Track debtor balance
+                    if (!debtorBalances[sale.debtorName]) {
+                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
+                    }
+                    debtorBalances[sale.debtorName].owed += amount;
+
                     const row = tbody.insertRow();
                     row.innerHTML = `
                         <td>${sale.debtorName}</td>
                         <td>${product ? product.name : sale.feedType}</td>
-                        <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
+                        <td style="text-align: right;">${formatBags(parseFloat(sale.bags))}</td>
                         <td style="text-align: right;">KSh ${parseFloat(sale.price).toLocaleString()}</td>
                         <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
                         <td>${shop}</td>
@@ -1077,12 +1187,70 @@ async function loadDebtorsView() {
         });
     }
 
+    // Collect all debt payments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.debtPayments) {
+                Object.values(data.debtPayments).forEach(payment => {
+                    const debtorName = payment.debtorName;
+                    const amountPaid = parseFloat(payment.amountPaid);
+                    
+                    if (debtorBalances[debtorName]) {
+                        debtorBalances[debtorName].paid += amountPaid;
+                    }
+                });
+            }
+        });
+    }
+
+    // Render detailed transactions footer
     const footerRow = tfoot.insertRow();
     footerRow.innerHTML = `
         <td colspan="4" style="text-align: left; font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${totalAmount.toLocaleString()}</td>
         <td colspan="2"></td>
     `;
+
+    // Render summary table
+    let totalOwed = 0;
+    let totalPaid = 0;
+    let totalBalance = 0;
+
+    Object.entries(debtorBalances).forEach(([name, data]) => {
+        const balance = data.owed - data.paid;
+        
+        // Only show if there's an outstanding balance
+        if (balance > 0) {
+            totalOwed += data.owed;
+            totalPaid += data.paid;
+            totalBalance += balance;
+
+            const row = summaryTbody.insertRow();
+            row.innerHTML = `
+                <td style="font-weight: bold;">${name}</td>
+                <td style="text-align: right;">KSh ${data.owed.toLocaleString()}</td>
+                <td style="text-align: right; color: #2e7d32;">KSh ${data.paid.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${balance.toLocaleString()}</td>
+            `;
+        }
+    });
+
+    // Summary footer
+    const summaryFooterRow = summaryTfoot.insertRow();
+    summaryFooterRow.innerHTML = `
+        <td style="font-weight: bold;">TOTAL</td>
+        <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #d32f2f; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
+    `;
+
+    // Store total balance globally for Stock Value calculation
+    window.totalDebtorsBalance = totalBalance;
 }
 
 async function loadCreditorsView() {
@@ -1183,8 +1351,61 @@ async function loadStockValueData(date) {
             }
         });
     }
+    // Recalculate debtors balance (actual outstanding, not total owed)
+    let debtorsValue = 0;
+    const debtorBalances = {};
 
-    const netValue = shopsValue + debtorsValue - creditorsValue;
+    // Collect all credit sales
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditSales) {
+                Object.values(data.creditSales).forEach(sale => {
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    
+                    if (!debtorBalances[sale.debtorName]) {
+                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
+                    }
+                    debtorBalances[sale.debtorName].owed += amount;
+                });
+            }
+        });
+    }
+
+    // Collect all debt payments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.debtPayments) {
+                Object.values(data.debtPayments).forEach(payment => {
+                    const debtorName = payment.debtorName;
+                    const amountPaid = parseFloat(payment.amountPaid);
+                    
+                    if (debtorBalances[debtorName]) {
+                        debtorBalances[debtorName].paid += amountPaid;
+                    }
+                });
+            }
+        });
+    }
+
+    // Calculate total outstanding balance
+    Object.values(debtorBalances).forEach(data => {
+        const balance = data.owed - data.paid;
+        if (balance > 0) {
+            debtorsValue += balance;
+        }
+    });
+
+    const netValue = shopsStockValue + debtorsValue - totalCreditorsAmount;
 
     document.getElementById('debtors-value').textContent = `KSh ${debtorsValue.toLocaleString()}`;
     document.getElementById('shops-value').textContent = `KSh ${shopsValue.toLocaleString()}`;
@@ -2825,7 +3046,7 @@ async function generateDoc2PDF() {
         }
     }
 
-    const netValue = shopsStockValue + totalDebtorsAmount - totalCreditorsAmount;
+    const netValue = shopsStockValue + debtorsValue - totalCreditorsAmount;
 
     // Create value breakdown table
     pdf.setFontSize(12);

@@ -894,3 +894,25 @@ canvas {
 .efficiency-poor {
     color: #d32f2f;
 }
+
+/* Delete Transaction Button */
+button[onclick^="deleteTransaction"]:hover {
+    background: #b71c1c !important;
+    transform: scale(1.05);
+}
+```
+
+---
+
+## **HOW IT WORKS:**
+
+### **What You'll See (as Manager Full Access):**
+
+**Recorded Transactions Today section will show:**
+```
+Regular Sales
+- clientName: John, feedType: Samakgro 1MM, bags: 5, price: 4150... [❌ Delete]
+- clientName: Mary, feedType: Broodstock, bags: 2, price: 3900... [❌ Delete]
+
+Credit Sales
+- debtorName: Sadia, feedType: Samakgro 2MM, bags: 5... [❌ Delete]

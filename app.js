@@ -1473,7 +1473,7 @@ async function loadStockValueData(date) {
         }
     });
 
-    const netValue = shopsStockValue + debtorsValue - totalCreditorsAmount;
+    const netValue = shopsValue + debtorsValue - creditorsValue;
 
     document.getElementById('debtors-value').textContent = `KSh ${debtorsValue.toLocaleString()}`;
     document.getElementById('shops-value').textContent = `KSh ${shopsValue.toLocaleString()}`;

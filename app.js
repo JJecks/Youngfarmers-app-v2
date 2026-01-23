@@ -1190,10 +1190,26 @@ async function loadTotalSalesData(date) {
 
 async function loadDebtorsView() {
     showView('debtors-view');
+    
+    // Wait for DOM to update
+    await new Promise(resolve => setTimeout(resolve, 0));
+    
     const tbody = document.getElementById('debtors-body');
     const tfoot = document.getElementById('debtors-footer');
     const summaryTbody = document.getElementById('debtors-summary-body');
     const summaryTfoot = document.getElementById('debtors-summary-footer');
+    
+    // Add safety checks
+    if (!tbody || !tfoot || !summaryTbody || !summaryTfoot) {
+        console.error('Debtors view elements not found:', {
+            tbody: !!tbody,
+            tfoot: !!tfoot,
+            summaryTbody: !!summaryTbody,
+            summaryTfoot: !!summaryTfoot
+        });
+        showToast('Error loading debtors view', 'error');
+        return;
+    }
     
     tbody.innerHTML = '';
     tfoot.innerHTML = '';

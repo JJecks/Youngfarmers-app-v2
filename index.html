@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Young Farmers Agencies LTD - Stock Management</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:,">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2e7d32">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -180,7 +181,10 @@
         <!-- Debtors View -->
         <div id="debtors-view" class="view-container" style="display: none;">
             <h2 class="view-title">Debtors</h2>
+            
+            <!-- Detailed Transactions -->
             <div class="card">
+                <h3 class="card-title">Credit Sales Transactions</h3>
                 <div class="table-container">
                     <table class="data-table">
                         <thead>
@@ -196,6 +200,25 @@
                         </thead>
                         <tbody id="debtors-body"></tbody>
                         <tfoot id="debtors-footer"></tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Summary Table -->
+            <div class="card">
+                <h3 class="card-title">Outstanding Balances</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Debtor Name</th>
+                                <th>Total Owed</th>
+                                <th>Total Paid</th>
+                                <th>Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody id="debtors-summary-body"></tbody>
+                        <tfoot id="debtors-summary-footer"></tfoot>
                     </table>
                 </div>
             </div>

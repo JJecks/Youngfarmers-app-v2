@@ -3114,6 +3114,60 @@ async function generateDoc2PDF() {
         }
     }
 
+    // Calculate debtors balance (outstanding amount after payments)
+    const debtorBalances = {};
+
+    // Collect all credit sales
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditSales) {
+                Object.values(data.creditSales).forEach(sale => {
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    
+                    if (!debtorBalances[sale.debtorName]) {
+                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
+                    }
+                    debtorBalances[sale.debtorName].owed += amount;
+                });
+            }
+        });
+    }
+
+    // Collect all debt payments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.debtPayments) {
+                Object.values(data.debtPayments).forEach(payment => {
+                    const debtorName = payment.debtorName;
+                    const amountPaid = parseFloat(payment.amountPaid);
+                    
+                    if (debtorBalances[debtorName]) {
+                        debtorBalances[debtorName].paid += amountPaid;
+                    }
+                });
+            }
+        });
+    }
+
+    // Calculate total outstanding debtors balance
+    let debtorsValue = 0;
+    Object.values(debtorBalances).forEach(data => {
+        const balance = data.owed - data.paid;
+        if (balance > 0) {
+            debtorsValue += balance;
+        }
+    });
+
     const netValue = shopsStockValue + debtorsValue - totalCreditorsAmount;
 
     // Create value breakdown table
@@ -3121,7 +3175,7 @@ async function generateDoc2PDF() {
     pdf.setFont(undefined, 'bold');
     
     const valueBreakdown = [
-        ['Debtors Value:', `KSh ${totalDebtorsAmount.toLocaleString()}`],
+        ['Debtors Value:', `KSh ${debtorsValue.toLocaleString()}`],
         ['Shops Stock Value:', `KSh ${shopsStockValue.toLocaleString()}`],
         ['Creditors Value:', `KSh ${totalCreditorsAmount.toLocaleString()}`]
     ];

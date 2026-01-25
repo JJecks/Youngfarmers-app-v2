@@ -998,6 +998,8 @@ function showTransactionForm(formId, shop) {
                         ${productsData.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
                     </select>
                     <input type="number" step="0.1" min="0.1" class="form-input" id="form-bags" placeholder="Number of Bags" required>
+                    <input type="number" class="form-input" id="form-price" placeholder="Price" readonly style="background: #f5f5f5;">
+                    <input type="number" min="0" class="form-input" id="form-discount" placeholder="Discount (KSh)" value="0" required>
                     <div class="form-buttons">
                         <button type="submit" class="btn-save" style="background: #f57c00;">Save</button>
                         <button type="button" class="btn-cancel">Cancel</button>
@@ -1071,12 +1073,20 @@ async function loadCreditorsForRelease(shop) {
         loading.style.display = 'none';
         form.style.display = 'grid';
         
+        // Auto-fill price when feed type is selected
+        document.getElementById('form-feed').onchange = (e) => {
+            const product = productsData.find(p => p.id === e.target.value);
+            document.getElementById('form-price').value = product ? product.sales : '';
+        };
+        
         form.onsubmit = async (e) => {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'creditorReleases', {
                 creditorName: document.getElementById('form-creditor').value,
                 feedType: document.getElementById('form-feed').value,
-                bags: document.getElementById('form-bags').value
+                bags: document.getElementById('form-bags').value,
+                price: document.getElementById('form-price').value,
+                discount: document.getElementById('form-discount').value
             });
         };
     }

@@ -1473,6 +1473,7 @@ async function loadStockValueData(date) {
     let shopsValue = 0;
     let creditorsValue = 0;
 
+    // Calculate shops stock value at SELLING PRICE
     for (const shop of SHOPS) {
         const shopDocRef = doc(db, 'shops', shop, 'daily', date);
         const shopDoc = await getDoc(shopDocRef);
@@ -1483,39 +1484,12 @@ async function loadStockValueData(date) {
             
             productsData.forEach(product => {
                 const bags = closing[product.id] || 0;
-                shopsValue += bags * product.cost;
+                shopsValue += bags * product.sales; // CHANGED: Using SELLING PRICE
             });
-
-            if (data.creditSales) {
-                Object.values(data.creditSales).forEach(sale => {
-                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-                    debtorsValue += amount;
-                });
-            }
-
-            if (data.creditorReleases) {
-                Object.values(data.creditorReleases).forEach(release => {
-                    const product = productsData.find(p => p.id === release.feedType);
-                    if (product) {
-                        creditorsValue += parseFloat(release.bags) * product.cost;
-                    }
-                });
-            }
         }
-
-        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
-        const snapshot = await getDocs(shopQuery);
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.prepayments) {
-                Object.values(data.prepayments).forEach(payment => {
-                    creditorsValue += parseFloat(payment.amountPaid);
-                });
-            }
-        });
     }
-    // Recalculate debtors balance (actual outstanding, not total owed)
-    debtorsValue = 0;
+
+    // Calculate debtors balance (actual outstanding, not total owed)
     const debtorBalances = {};
 
     // Collect all credit sales
@@ -1560,11 +1534,68 @@ async function loadStockValueData(date) {
         });
     }
 
-    // Calculate total outstanding balance
+    // Calculate total outstanding debtors balance
     Object.values(debtorBalances).forEach(data => {
         const balance = data.owed - data.paid;
         if (balance > 0) {
             debtorsValue += balance;
+        }
+    });
+
+    // Calculate creditors balance (prepayments minus feeds taken at SELLING PRICE)
+    const creditorBalances = {};
+
+    // Collect all prepayments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.prepayments) {
+                Object.values(data.prepayments).forEach(payment => {
+                    if (!creditorBalances[payment.clientName]) {
+                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0 };
+                    }
+                    creditorBalances[payment.clientName].prepaid += parseFloat(payment.amountPaid);
+                });
+            }
+        });
+    }
+
+    // Collect all creditor releases (feeds taken at SELLING PRICE)
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditorReleases) {
+                Object.values(data.creditorReleases).forEach(release => {
+                    const creditorName = release.creditorName;
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    
+                    // Use price from transaction if available, otherwise use product selling price
+                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                    const discount = parseFloat(release.discount || 0);
+                    const amount = (bags * price) - discount; // SELLING PRICE with discount
+                    
+                    if (creditorBalances[creditorName]) {
+                        creditorBalances[creditorName].feedsTaken += amount;
+                    }
+                });
+            }
+        });
+    }
+
+    // Calculate total creditors balance
+    Object.values(creditorBalances).forEach(data => {
+        const balance = data.prepaid - data.feedsTaken;
+        if (balance !== 0) {
+            creditorsValue += balance;
         }
     });
 
@@ -1575,7 +1606,7 @@ async function loadStockValueData(date) {
     document.getElementById('creditors-value').textContent = `KSh ${creditorsValue.toLocaleString()}`;
     document.getElementById('net-value').textContent = `KSh ${netValue.toLocaleString()}`;
     document.getElementById('formula-text').innerHTML = `
-        Net Stock Value = Stock in Shops + Debtors - Creditors<br>
+        Net Stock Value = Stock in Shops (at Selling Price) + Debtors - Creditors<br>
         Net Stock Value = ${shopsValue.toLocaleString()} + ${debtorsValue.toLocaleString()} - ${creditorsValue.toLocaleString()}
     `;
 }
@@ -2745,7 +2776,7 @@ async function generateDoc1PDF(date) {
                 const sold = calculateSold(data, product.id);
                 const closingQty = closing[product.id] || 0;
                 const salesAmount = sold * product.sales;
-                const stockValue = closingQty * product.cost;
+                const stockValue = closingQty * product.sales; // CHANGED: Using SELLING PRICE
 
                 totalSalesAmount += salesAmount;
                 totalStockValue += stockValue;
@@ -3191,7 +3222,7 @@ async function generateDoc2PDF() {
     pdf.text('Stock Value Summary', 105, yPos, { align: 'center' });
     yPos += 20;
 
-    // Calculate shops stock value
+    // Calculate shops stock value at SELLING PRICE
     let shopsStockValue = 0;
 
     for (const shop of SHOPS) {
@@ -3204,7 +3235,7 @@ async function generateDoc2PDF() {
 
             productsData.forEach(product => {
                 const bags = closing[product.id] || 0;
-                shopsStockValue += bags * product.cost;
+                shopsStockValue += bags * product.sales; // CHANGED: Using SELLING PRICE
             });
         }
     }
@@ -3263,16 +3294,72 @@ async function generateDoc2PDF() {
         }
     });
 
-    const netValue = shopsStockValue + debtorsValue - totalCreditorsAmount;
+    const netValue = shopsStockValue + debtorsValue - creditorsBalanceDoc2;
 
     // Create value breakdown table
     pdf.setFontSize(12);
     pdf.setFont(undefined, 'bold');
     
+    // Calculate creditors balance properly (matching summary table)
+    const creditorBalancesDoc2 = {};
+
+    // Collect all prepayments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.prepayments) {
+                Object.values(data.prepayments).forEach(payment => {
+                    if (!creditorBalancesDoc2[payment.clientName]) {
+                        creditorBalancesDoc2[payment.clientName] = { prepaid: 0, feedsTaken: 0 };
+                    }
+                    creditorBalancesDoc2[payment.clientName].prepaid += parseFloat(payment.amountPaid);
+                });
+            }
+        });
+    }
+
+    // Collect all creditor releases
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditorReleases) {
+                Object.values(data.creditorReleases).forEach(release => {
+                    const creditorName = release.creditorName;
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                    const discount = parseFloat(release.discount || 0);
+                    const amount = (bags * price) - discount;
+                    
+                    if (creditorBalancesDoc2[creditorName]) {
+                        creditorBalancesDoc2[creditorName].feedsTaken += amount;
+                    }
+                });
+            }
+        });
+    }
+
+    // Calculate total creditors balance
+    let creditorsBalanceDoc2 = 0;
+    Object.values(creditorBalancesDoc2).forEach(data => {
+        const balance = data.prepaid - data.feedsTaken;
+        if (balance !== 0) {
+            creditorsBalanceDoc2 += balance;
+        }
+    });
+
     const valueBreakdown = [
         ['Debtors Value:', `KSh ${debtorsValue.toLocaleString()}`],
-        ['Shops Stock Value:', `KSh ${shopsStockValue.toLocaleString()}`],
-        ['Creditors Value:', `KSh ${totalCreditorsAmount.toLocaleString()}`]
+        ['Shops Stock Value (Selling Price):', `KSh ${shopsStockValue.toLocaleString()}`],
+        ['Creditors Value:', `KSh ${creditorsBalanceDoc2.toLocaleString()}`]
     ];
 
     pdf.autoTable({
@@ -3295,11 +3382,11 @@ async function generateDoc2PDF() {
     // Draw calculation
     pdf.setFontSize(11);
     pdf.setFont(undefined, 'normal');
-    pdf.text('Net Stock Value = Stock in Shops + Debtors - Creditors', 105, afterTable, { align: 'center' });
+    pdf.text('Net Stock Value = Stock in Shops (at Selling Price) + Debtors - Creditors', 105, afterTable, { align: 'center' });
     
     pdf.setFontSize(10);
     pdf.text(
-        `Net Stock Value = ${shopsStockValue.toLocaleString()} + ${totalDebtorsAmount.toLocaleString()} - ${totalCreditorsAmount.toLocaleString()}`,
+        `Net Stock Value = ${shopsStockValue.toLocaleString()} + ${debtorsValue.toLocaleString()} - ${totalCreditorsAmount.toLocaleString()}`,
         105,
         afterTable + 7,
         { align: 'center' }

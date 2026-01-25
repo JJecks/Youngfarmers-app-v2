@@ -1323,25 +1323,49 @@ async function loadDebtorsView() {
 
 async function loadCreditorsView() {
     showView('creditors-view');
+    
+    // Wait for DOM to update
+    await new Promise(resolve => setTimeout(resolve, 0));
+    
     const tbody = document.getElementById('creditors-body');
     const tfoot = document.getElementById('creditors-footer');
+    const summaryTbody = document.getElementById('creditors-summary-body');
+    const summaryTfoot = document.getElementById('creditors-summary-footer');
+    
+    // Add safety checks
+    if (!tbody || !tfoot || !summaryTbody || !summaryTfoot) {
+        console.error('Creditors view elements not found');
+        showToast('Error loading creditors view', 'error');
+        return;
+    }
+    
     tbody.innerHTML = '';
     tfoot.innerHTML = '';
+    summaryTbody.innerHTML = '';
+    summaryTfoot.innerHTML = '';
 
     let totalAmount = 0;
+    const creditorBalances = {}; // Track: { name: { prepaid, feedsTaken, balance } }
 
+    // Collect all prepayments
     for (const shop of SHOPS) {
         const shopQuery = query(collection(db, 'shops', shop, 'daily'));
         const snapshot = await getDocs(shopQuery);
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const date = doc.id;
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            const date = docSnapshot.id;
             
             if (data.prepayments) {
                 Object.values(data.prepayments).forEach(payment => {
                     const amount = parseFloat(payment.amountPaid);
                     totalAmount += amount;
+
+                    // Track creditor balance
+                    if (!creditorBalances[payment.clientName]) {
+                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0 };
+                    }
+                    creditorBalances[payment.clientName].prepaid += amount;
 
                     const row = tbody.insertRow();
                     row.innerHTML = `
@@ -1355,12 +1379,73 @@ async function loadCreditorsView() {
         });
     }
 
+    // Collect all creditor releases (feeds taken)
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditorReleases) {
+                Object.values(data.creditorReleases).forEach(release => {
+                    const creditorName = release.creditorName;
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    const amount = product ? bags * product.sales : 0;
+                    
+                    if (creditorBalances[creditorName]) {
+                        creditorBalances[creditorName].feedsTaken += bags;
+                        creditorBalances[creditorName].feedsAmount += amount;
+                    }
+                });
+            }
+        });
+    }
+
+    // Render prepayments footer
     const footerRow = tfoot.insertRow();
     footerRow.innerHTML = `
         <td style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold; color: #f57c00;">KSh ${totalAmount.toLocaleString()}</td>
         <td colspan="2"></td>
     `;
+
+    // Render summary table
+    let totalFeedsTaken = 0;
+    let totalFeedsAmount = 0;
+    let totalBalance = 0;
+
+    Object.entries(creditorBalances).forEach(([name, data]) => {
+        const balance = data.prepaid - data.feedsAmount;
+        
+        // Only show if there's a balance (positive or negative)
+        if (balance !== 0) {
+            totalFeedsTaken += data.feedsTaken;
+            totalFeedsAmount += data.feedsAmount;
+            totalBalance += balance;
+
+            const row = summaryTbody.insertRow();
+            row.innerHTML = `
+                <td style="font-weight: bold;">${name}</td>
+                <td style="text-align: right;">${data.feedsTaken.toFixed(1)} bags</td>
+                <td style="text-align: right;">KSh ${data.feedsAmount.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: ${balance > 0 ? '#2e7d32' : '#d32f2f'};">KSh ${balance.toLocaleString()}</td>
+            `;
+        }
+    });
+
+    // Summary footer
+    const summaryFooterRow = summaryTfoot.insertRow();
+    summaryFooterRow.innerHTML = `
+        <td style="font-weight: bold;">TOTAL</td>
+        <td style="text-align: right; font-weight: bold;">${totalFeedsTaken.toFixed(1)} bags</td>
+        <td style="text-align: right; font-weight: bold;">KSh ${totalFeedsAmount.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #f57c00; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
+    `;
+
+    // Store total creditor balance globally for Stock Value calculation
+    window.totalCreditorsBalance = totalBalance;
 }
 async function loadStockValueView() {
     showView('stock-value-view');

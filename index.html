@@ -227,7 +227,10 @@
         <!-- Creditors View -->
         <div id="creditors-view" class="view-container" style="display: none;">
             <h2 class="view-title">Creditors</h2>
+            
+            <!-- Detailed Prepayments Transactions -->
             <div class="card">
+                <h3 class="card-title">Prepayment Transactions</h3>
                 <div class="table-container">
                     <table class="data-table">
                         <thead>
@@ -240,6 +243,25 @@
                         </thead>
                         <tbody id="creditors-body"></tbody>
                         <tfoot id="creditors-footer"></tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Creditors Summary Table -->
+            <div class="card">
+                <h3 class="card-title">Creditors Summary</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Creditor Name</th>
+                                <th>Feeds Taken (Bags)</th>
+                                <th>Amount</th>
+                                <th>Creditor Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody id="creditors-summary-body"></tbody>
+                        <tfoot id="creditors-summary-footer"></tfoot>
                     </table>
                 </div>
             </div>

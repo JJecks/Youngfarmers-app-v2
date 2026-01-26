@@ -815,6 +815,7 @@ function showTransactionForm(formId, shop) {
                 <h4 style="color: #2e7d32;">Record a Sale</h4>
                 <form id="transaction-form" class="form-grid">
                     <input type="text" class="form-input" id="form-client" placeholder="Client Name" required>
+                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
                     <select class="form-input" id="form-feed" required>
                         <option value="">Select Feed Type</option>
                         ${productsData.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
@@ -837,6 +838,7 @@ function showTransactionForm(formId, shop) {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'regularSales', {
                 clientName: document.getElementById('form-client').value,
+                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
                 feedType: document.getElementById('form-feed').value,
                 bags: document.getElementById('form-bags').value,
                 price: document.getElementById('form-price').value,
@@ -935,6 +937,7 @@ function showTransactionForm(formId, shop) {
                 <h4 style="color: #c62828;">Sales Made on Credit</h4>
                 <form id="transaction-form" class="form-grid">
                     <input type="text" class="form-input" id="form-debtor" placeholder="Debtor Name" required>
+                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
                     <select class="form-input" id="form-feed" required>
                         <option value="">Select Feed Type</option>
                         ${productsData.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
@@ -957,6 +960,7 @@ function showTransactionForm(formId, shop) {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'creditSales', {
                 debtorName: document.getElementById('form-debtor').value,
+                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
                 feedType: document.getElementById('form-feed').value,
                 bags: document.getElementById('form-bags').value,
                 price: document.getElementById('form-price').value,
@@ -969,6 +973,7 @@ function showTransactionForm(formId, shop) {
                 <h4 style="color: #388e3c;">Prepayments Made</h4>
                 <form id="transaction-form" class="form-grid">
                     <input type="text" class="form-input" id="form-client" placeholder="Client Name" required>
+                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
                     <input type="number" min="0" class="form-input" id="form-amount" placeholder="Amount Paid (KSh)" required>
                     <div class="form-buttons">
                         <button type="submit" class="btn-save" style="background: #388e3c;">Save</button>
@@ -981,6 +986,7 @@ function showTransactionForm(formId, shop) {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'prepayments', {
                 clientName: document.getElementById('form-client').value,
+                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
                 amountPaid: document.getElementById('form-amount').value
             });
         };
@@ -1236,7 +1242,6 @@ async function loadDebtorsView() {
 
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
-            const date = docSnapshot.id;
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
@@ -1246,7 +1251,7 @@ async function loadDebtorsView() {
 
                     // Track debtor balance
                     if (!debtorBalances[sale.debtorName]) {
-                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
+                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0, phoneNumber: sale.phoneNumber || 'Not Provided' };
                     }
                     debtorBalances[sale.debtorName].owed += amount;
 
@@ -1311,6 +1316,7 @@ async function loadDebtorsView() {
             const row = summaryTbody.insertRow();
             row.innerHTML = `
                 <td style="font-weight: bold;">${name}</td>
+                <td>${data.phoneNumber || 'Not Provided'}</td>
                 <td style="text-align: right;">KSh ${data.owed.toLocaleString()}</td>
                 <td style="text-align: right; color: #2e7d32;">KSh ${data.paid.toLocaleString()}</td>
                 <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${balance.toLocaleString()}</td>
@@ -1321,7 +1327,7 @@ async function loadDebtorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
-        <td style="font-weight: bold;">TOTAL</td>
+        <td colspan="2" style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #d32f2f; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
@@ -1373,7 +1379,7 @@ async function loadCreditorsView() {
 
                     // Track creditor balance
                     if (!creditorBalances[payment.clientName]) {
-                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0 };
+                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0, phoneNumber: payment.phoneNumber || 'Not Provided' };
                     }
                     creditorBalances[payment.clientName].prepaid += amount;
 
@@ -1438,6 +1444,7 @@ async function loadCreditorsView() {
             const row = summaryTbody.insertRow();
             row.innerHTML = `
                 <td style="font-weight: bold;">${name}</td>
+                <td>${data.phoneNumber || 'Not Provided'}</td>
                 <td style="text-align: right;">${data.feedsTaken.toFixed(1)} bags</td>
                 <td style="text-align: right;">KSh ${data.feedsAmount.toLocaleString()}</td>
                 <td style="text-align: right; font-weight: bold; color: ${balance > 0 ? '#2e7d32' : '#d32f2f'};">KSh ${balance.toLocaleString()}</td>
@@ -1448,7 +1455,7 @@ async function loadCreditorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
-        <td style="font-weight: bold;">TOTAL</td>
+        <td colspan="2" style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold;">${totalFeedsTaken.toFixed(1)} bags</td>
         <td style="text-align: right; font-weight: bold;">KSh ${totalFeedsAmount.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #f57c00; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
@@ -1685,6 +1692,7 @@ async function loadAllClientsView() {
                             const row = tbody.insertRow();
                             row.innerHTML = `
                                 <td>${sale.clientName}</td>
+                                <td>${sale.phoneNumber || 'Not Provided'}</td>
                                 <td>${product ? product.name : sale.feedType}</td>
                                 <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
                                 <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
@@ -3081,6 +3089,7 @@ async function generateDoc2PDF() {
 
                     debtorsData.push([
                         sale.debtorName,
+                        sale.phoneNumber || 'Not Provided',
                         product ? product.name : sale.feedType,
                         parseFloat(sale.bags).toFixed(1),
                         `KSh ${parseFloat(sale.price).toLocaleString()}`,
@@ -3094,10 +3103,11 @@ async function generateDoc2PDF() {
     }
 
     if (debtorsData.length === 0) {
-        debtorsData.push(['No debtors recorded', '', '', '', '', '', '']);
+        debtorsData.push(['No debtors recorded', '', '', '', '', '', '', '']);
     }
 
     debtorsData.push([
+        '',
         '',
         '',
         '',
@@ -3109,7 +3119,7 @@ async function generateDoc2PDF() {
 
     pdf.autoTable({
         startY: yPos,
-        head: [['Client', 'Feeds', 'Bags', 'Price', 'Amount', 'Shop', 'Date']],
+        head: [['Client', 'Phone', 'Feeds', 'Bags', 'Price', 'Amount', 'Shop', 'Date']],
         body: debtorsData,
         theme: 'grid',
         headStyles: { 
@@ -3118,15 +3128,16 @@ async function generateDoc2PDF() {
             fontStyle: 'bold',
             halign: 'center'
         },
-        styles: { fontSize: 9, cellPadding: 2 },
+        styles: { fontSize: 8, cellPadding: 2 },
         columnStyles: {
-            0: { cellWidth: 30 },
-            1: { cellWidth: 28 },
-            2: { halign: 'right', cellWidth: 18 },
-            3: { halign: 'right', cellWidth: 25 },
-            4: { halign: 'right', cellWidth: 25 },
-            5: { cellWidth: 25 },
-            6: { cellWidth: 25 }
+            0: { cellWidth: 25 },
+            1: { cellWidth: 23 },
+            2: { cellWidth: 25 },
+            3: { halign: 'right', cellWidth: 15 },
+            4: { halign: 'right', cellWidth: 20 },
+            5: { halign: 'right', cellWidth: 23 },
+            6: { cellWidth: 20 },
+            7: { cellWidth: 25 }
         },
         didParseCell: function(data) {
             if (data.row.index === debtorsData.length - 1) {
@@ -3167,6 +3178,7 @@ async function generateDoc2PDF() {
                         formatDateDisplay(date),
                         shop,
                         payment.clientName,
+                        payment.phoneNumber || 'Not Provided',
                         `KSh ${amount.toLocaleString()}`
                     ]);
                 });
@@ -3175,10 +3187,11 @@ async function generateDoc2PDF() {
     }
 
     if (creditorsData.length === 0) {
-        creditorsData.push(['-', 'No creditors recorded', '', '', '']);
+        creditorsData.push(['-', 'No creditors recorded', '', '', '', '']);
     }
 
     creditorsData.push([
+        '',
         '',
         '',
         '',
@@ -3188,7 +3201,7 @@ async function generateDoc2PDF() {
 
     pdf.autoTable({
         startY: yPos,
-        head: [['Index', 'Date', 'Shop', 'Client', 'Amount']],
+        head: [['Index', 'Date', 'Shop', 'Client', 'Phone', 'Amount']],
         body: creditorsData,
         theme: 'grid',
         headStyles: { 
@@ -3197,13 +3210,14 @@ async function generateDoc2PDF() {
             fontStyle: 'bold',
             halign: 'center'
         },
-        styles: { fontSize: 10, cellPadding: 3 },
+        styles: { fontSize: 9, cellPadding: 3 },
         columnStyles: {
-            0: { halign: 'center', cellWidth: 20 },
-            1: { halign: 'center', cellWidth: 35 },
-            2: { cellWidth: 35 },
-            3: { cellWidth: 45 },
-            4: { halign: 'right', cellWidth: 35 }
+            0: { halign: 'center', cellWidth: 15 },
+            1: { halign: 'center', cellWidth: 30 },
+            2: { cellWidth: 28 },
+            3: { cellWidth: 32 },
+            4: { cellWidth: 30 },
+            5: { halign: 'right', cellWidth: 30 }
         },
         didParseCell: function(data) {
             if (data.row.index === creditorsData.length - 1) {

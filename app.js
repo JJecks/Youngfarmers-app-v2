@@ -1210,29 +1210,19 @@ async function loadDebtorsView() {
     // Wait for DOM to update
     await new Promise(resolve => setTimeout(resolve, 0));
     
-    const tbody = document.getElementById('debtors-body');
-    const tfoot = document.getElementById('debtors-footer');
     const summaryTbody = document.getElementById('debtors-summary-body');
     const summaryTfoot = document.getElementById('debtors-summary-footer');
     
     // Add safety checks
-    if (!tbody || !tfoot || !summaryTbody || !summaryTfoot) {
-        console.error('Debtors view elements not found:', {
-            tbody: !!tbody,
-            tfoot: !!tfoot,
-            summaryTbody: !!summaryTbody,
-            summaryTfoot: !!summaryTfoot
-        });
+    if (!summaryTbody || !summaryTfoot) {
+        console.error('Debtors view elements not found');
         showToast('Error loading debtors view', 'error');
         return;
     }
     
-    tbody.innerHTML = '';
-    tfoot.innerHTML = '';
     summaryTbody.innerHTML = '';
     summaryTfoot.innerHTML = '';
 
-    let totalAmount = 0;
     const debtorBalances = {}; // Track per debtor: { name: { owed, paid } }
 
     // Collect all credit sales
@@ -1245,26 +1235,13 @@ async function loadDebtorsView() {
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
-                    const product = productsData.find(p => p.id === sale.feedType);
                     const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-                    totalAmount += amount;
 
                     // Track debtor balance
                     if (!debtorBalances[sale.debtorName]) {
                         debtorBalances[sale.debtorName] = { owed: 0, paid: 0, phoneNumber: sale.phoneNumber || 'Not Provided' };
                     }
                     debtorBalances[sale.debtorName].owed += amount;
-
-                    const row = tbody.insertRow();
-                    row.innerHTML = `
-                        <td>${sale.debtorName}</td>
-                        <td>${product ? product.name : sale.feedType}</td>
-                        <td style="text-align: right;">${formatBags(parseFloat(sale.bags))}</td>
-                        <td style="text-align: right;">KSh ${parseFloat(sale.price).toLocaleString()}</td>
-                        <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
-                        <td>${shop}</td>
-                        <td>${formatDateDisplay(docSnapshot.id)}</td>
-                    `;
                 });
             }
         });
@@ -1290,14 +1267,6 @@ async function loadDebtorsView() {
             }
         });
     }
-
-    // Render detailed transactions footer
-    const footerRow = tfoot.insertRow();
-    footerRow.innerHTML = `
-        <td colspan="4" style="text-align: left; font-weight: bold;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${totalAmount.toLocaleString()}</td>
-        <td colspan="2"></td>
-    `;
 
     // Render summary table
     let totalOwed = 0;
@@ -1343,8 +1312,6 @@ async function loadCreditorsView() {
     // Wait for DOM to update
     await new Promise(resolve => setTimeout(resolve, 0));
     
-    const tbody = document.getElementById('creditors-body');
-    const tfoot = document.getElementById('creditors-footer');
     const summaryTbody = document.getElementById('creditors-summary-body');
     const summaryTfoot = document.getElementById('creditors-summary-footer');
     
@@ -1355,12 +1322,9 @@ async function loadCreditorsView() {
         return;
     }
     
-    tbody.innerHTML = '';
-    tfoot.innerHTML = '';
     summaryTbody.innerHTML = '';
     summaryTfoot.innerHTML = '';
 
-    let totalAmount = 0;
     const creditorBalances = {}; // Track: { name: { prepaid, feedsTaken, balance } }
 
     // Collect all prepayments
@@ -1370,26 +1334,16 @@ async function loadCreditorsView() {
 
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
-            const date = docSnapshot.id;
             
             if (data.prepayments) {
                 Object.values(data.prepayments).forEach(payment => {
                     const amount = parseFloat(payment.amountPaid);
-                    totalAmount += amount;
 
                     // Track creditor balance
                     if (!creditorBalances[payment.clientName]) {
                         creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0, phoneNumber: payment.phoneNumber || 'Not Provided' };
                     }
                     creditorBalances[payment.clientName].prepaid += amount;
-
-                    const row = tbody.insertRow();
-                    row.innerHTML = `
-                        <td>${payment.clientName}</td>
-                        <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
-                        <td>${shop}</td>
-                        <td>${formatDateDisplay(date)}</td>
-                    `;
                 });
             }
         });
@@ -1418,14 +1372,6 @@ async function loadCreditorsView() {
             }
         });
     }
-
-    // Render prepayments footer
-    const footerRow = tfoot.insertRow();
-    footerRow.innerHTML = `
-        <td style="font-weight: bold;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold; color: #f57c00;">KSh ${totalAmount.toLocaleString()}</td>
-        <td colspan="2"></td>
-    `;
 
     // Render summary table
     let totalFeedsTaken = 0;
@@ -3061,103 +3007,65 @@ async function generateDoc2PDF() {
         }
     });
 
-    // PAGE 2: Debtors Outstanding Balances
+    // PAGE 2: Debtors
     pdf.addPage();
     yPos = 20;
 
     pdf.setFontSize(16);
     pdf.setFont(undefined, 'bold');
-    pdf.text('Debtors - Outstanding Balances', 105, yPos, { align: 'center' });
+    pdf.text('Debtors', 105, yPos, { align: 'center' });
     yPos += 15;
 
     const debtorsData = [];
-    const debtorBalancesPDF = {};
+    let totalDebtorsAmount = 0;
 
-    // Collect all credit sales
     for (const shop of SHOPS) {
         const shopQuery = query(collection(db, 'shops', shop, 'daily'));
         const snapshot = await getDocs(shopQuery);
 
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
-            
+            const date = docSnapshot.id;
+
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
+                    const product = productsData.find(p => p.id === sale.feedType);
                     const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-                    
-                    if (!debtorBalancesPDF[sale.debtorName]) {
-                        debtorBalancesPDF[sale.debtorName] = { 
-                            owed: 0, 
-                            paid: 0, 
-                            phoneNumber: sale.phoneNumber || 'Not Provided' 
-                        };
-                    }
-                    debtorBalancesPDF[sale.debtorName].owed += amount;
+                    totalDebtorsAmount += amount;
+
+                    debtorsData.push([
+                        sale.debtorName,
+                        sale.phoneNumber || 'Not Provided',
+                        product ? product.name : sale.feedType,
+                        parseFloat(sale.bags).toFixed(1),
+                        `KSh ${parseFloat(sale.price).toLocaleString()}`,
+                        `KSh ${amount.toLocaleString()}`,
+                        shop,
+                        formatDateDisplay(date)
+                    ]);
                 });
             }
         });
     }
-
-    // Collect all debt payments
-    for (const shop of SHOPS) {
-        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
-        const snapshot = await getDocs(shopQuery);
-
-        snapshot.forEach(docSnapshot => {
-            const data = docSnapshot.data();
-            
-            if (data.debtPayments) {
-                Object.values(data.debtPayments).forEach(payment => {
-                    const debtorName = payment.debtorName;
-                    const amountPaid = parseFloat(payment.amountPaid);
-                    
-                    if (debtorBalancesPDF[debtorName]) {
-                        debtorBalancesPDF[debtorName].paid += amountPaid;
-                    }
-                });
-            }
-        });
-    }
-
-    // Build summary table data
-    let totalOwed = 0;
-    let totalPaid = 0;
-    let totalBalance = 0;
-
-    Object.entries(debtorBalancesPDF).forEach(([name, data]) => {
-        const balance = data.owed - data.paid;
-        
-        // Only show if there's an outstanding balance
-        if (balance > 0) {
-            totalOwed += data.owed;
-            totalPaid += data.paid;
-            totalBalance += balance;
-
-            debtorsData.push([
-                name,
-                data.phoneNumber,
-                `KSh ${data.owed.toLocaleString()}`,
-                `KSh ${data.paid.toLocaleString()}`,
-                `KSh ${balance.toLocaleString()}`
-            ]);
-        }
-    });
 
     if (debtorsData.length === 0) {
-        debtorsData.push(['No outstanding balances', '', '', '', '']);
+        debtorsData.push(['No debtors recorded', '', '', '', '', '', '', '']);
     }
 
     debtorsData.push([
-        'TOTAL',
         '',
-        `KSh ${totalOwed.toLocaleString()}`,
-        `KSh ${totalPaid.toLocaleString()}`,
-        `KSh ${totalBalance.toLocaleString()}`
+        '',
+        '',
+        '',
+        'TOTAL',
+        `KSh ${totalDebtorsAmount.toLocaleString()}`,
+        '',
+        ''
     ]);
 
     pdf.autoTable({
         startY: yPos,
-        head: [['Debtor Name', 'Phone Number', 'Total Owed', 'Total Paid', 'Outstanding Balance']],
+        head: [['Client', 'Phone', 'Feeds', 'Bags', 'Price', 'Amount', 'Shop', 'Date']],
         body: debtorsData,
         theme: 'grid',
         headStyles: { 
@@ -3166,13 +3074,16 @@ async function generateDoc2PDF() {
             fontStyle: 'bold',
             halign: 'center'
         },
-        styles: { fontSize: 10, cellPadding: 3 },
+        styles: { fontSize: 8, cellPadding: 2 },
         columnStyles: {
-            0: { cellWidth: 45 },
-            1: { cellWidth: 35 },
-            2: { halign: 'right', cellWidth: 30 },
-            3: { halign: 'right', cellWidth: 30 },
-            4: { halign: 'right', cellWidth: 35, fontStyle: 'bold' }
+            0: { cellWidth: 25 },
+            1: { cellWidth: 23 },
+            2: { cellWidth: 25 },
+            3: { halign: 'right', cellWidth: 15 },
+            4: { halign: 'right', cellWidth: 20 },
+            5: { halign: 'right', cellWidth: 23 },
+            6: { cellWidth: 20 },
+            7: { cellWidth: 25 }
         },
         didParseCell: function(data) {
             if (data.row.index === debtorsData.length - 1) {
@@ -3182,107 +3093,61 @@ async function generateDoc2PDF() {
         }
     });
 
-    // PAGE 3: Creditors Summary
+    // PAGE 3: Creditors
     pdf.addPage();
     yPos = 20;
 
     pdf.setFontSize(16);
     pdf.setFont(undefined, 'bold');
-    pdf.text('Creditors Summary', 105, yPos, { align: 'center' });
+    pdf.text('Creditors', 105, yPos, { align: 'center' });
     yPos += 15;
 
     const creditorsData = [];
-    const creditorBalancesPDF = {};
+    let totalCreditorsAmount = 0;
+    let creditorIndex = 1;
 
-    // Collect all prepayments
     for (const shop of SHOPS) {
         const shopQuery = query(collection(db, 'shops', shop, 'daily'));
         const snapshot = await getDocs(shopQuery);
 
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
-            
+            const date = docSnapshot.id;
+
             if (data.prepayments) {
                 Object.values(data.prepayments).forEach(payment => {
-                    if (!creditorBalancesPDF[payment.clientName]) {
-                        creditorBalancesPDF[payment.clientName] = { 
-                            prepaid: 0, 
-                            feedsTaken: 0, 
-                            feedsAmount: 0,
-                            phoneNumber: payment.phoneNumber || 'Not Provided' 
-                        };
-                    }
-                    creditorBalancesPDF[payment.clientName].prepaid += parseFloat(payment.amountPaid);
+                    const amount = parseFloat(payment.amountPaid);
+                    totalCreditorsAmount += amount;
+
+                    creditorsData.push([
+                        creditorIndex++,
+                        formatDateDisplay(date),
+                        shop,
+                        payment.clientName,
+                        payment.phoneNumber || 'Not Provided',
+                        `KSh ${amount.toLocaleString()}`
+                    ]);
                 });
             }
         });
     }
-
-    // Collect all creditor releases (feeds taken)
-    for (const shop of SHOPS) {
-        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
-        const snapshot = await getDocs(shopQuery);
-
-        snapshot.forEach(docSnapshot => {
-            const data = docSnapshot.data();
-            
-            if (data.creditorReleases) {
-                Object.values(data.creditorReleases).forEach(release => {
-                    const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                    const discount = parseFloat(release.discount || 0);
-                    const amount = (bags * price) - discount;
-                    
-                    if (creditorBalancesPDF[creditorName]) {
-                        creditorBalancesPDF[creditorName].feedsTaken += bags;
-                        creditorBalancesPDF[creditorName].feedsAmount += amount;
-                    }
-                });
-            }
-        });
-    }
-
-    // Build summary table data
-    let totalFeedsTaken = 0;
-    let totalFeedsAmount = 0;
-    let totalCreditorBalance = 0;
-
-    Object.entries(creditorBalancesPDF).forEach(([name, data]) => {
-        const balance = data.prepaid - data.feedsAmount;
-        
-        // Only show if there's a balance (positive or negative)
-        if (balance !== 0) {
-            totalFeedsTaken += data.feedsTaken;
-            totalFeedsAmount += data.feedsAmount;
-            totalCreditorBalance += balance;
-
-            creditorsData.push([
-                name,
-                data.phoneNumber,
-                `${data.feedsTaken.toFixed(1)} bags`,
-                `KSh ${data.feedsAmount.toLocaleString()}`,
-                `KSh ${balance.toLocaleString()}`
-            ]);
-        }
-    });
 
     if (creditorsData.length === 0) {
-        creditorsData.push(['No creditor balances', '', '', '', '']);
+        creditorsData.push(['-', 'No creditors recorded', '', '', '', '']);
     }
 
     creditorsData.push([
-        'TOTAL',
         '',
-        `${totalFeedsTaken.toFixed(1)} bags`,
-        `KSh ${totalFeedsAmount.toLocaleString()}`,
-        `KSh ${totalCreditorBalance.toLocaleString()}`
+        '',
+        '',
+        '',
+        'TOTAL',
+        `KSh ${totalCreditorsAmount.toLocaleString()}`
     ]);
 
     pdf.autoTable({
         startY: yPos,
-        head: [['Creditor Name', 'Phone Number', 'Feeds Taken', 'Amount', 'Creditor Balance']],
+        head: [['Index', 'Date', 'Shop', 'Client', 'Phone', 'Amount']],
         body: creditorsData,
         theme: 'grid',
         headStyles: { 
@@ -3291,13 +3156,14 @@ async function generateDoc2PDF() {
             fontStyle: 'bold',
             halign: 'center'
         },
-        styles: { fontSize: 10, cellPadding: 3 },
+        styles: { fontSize: 9, cellPadding: 3 },
         columnStyles: {
-            0: { cellWidth: 45 },
-            1: { cellWidth: 35 },
-            2: { halign: 'right', cellWidth: 30 },
-            3: { halign: 'right', cellWidth: 30 },
-            4: { halign: 'right', cellWidth: 35, fontStyle: 'bold' }
+            0: { halign: 'center', cellWidth: 15 },
+            1: { halign: 'center', cellWidth: 30 },
+            2: { cellWidth: 28 },
+            3: { cellWidth: 32 },
+            4: { cellWidth: 30 },
+            5: { halign: 'right', cellWidth: 30 }
         },
         didParseCell: function(data) {
             if (data.row.index === creditorsData.length - 1) {

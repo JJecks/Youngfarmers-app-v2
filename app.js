@@ -1263,7 +1263,7 @@ async function loadDebtorsView() {
                         <td style="text-align: right;">KSh ${parseFloat(sale.price).toLocaleString()}</td>
                         <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
                         <td>${shop}</td>
-                        <td>${formatDateDisplay(date)}</td>
+                        <td>${formatDateDisplay(docSnapshot.id)}</td>
                     `;
                 });
             }
@@ -3308,8 +3308,6 @@ async function generateDoc2PDF() {
         }
     });
 
-    const netValue = shopsStockValue + debtorsValue - creditorsBalanceDoc2;
-
     // Create value breakdown table
     pdf.setFontSize(12);
     pdf.setFont(undefined, 'bold');
@@ -3370,6 +3368,8 @@ async function generateDoc2PDF() {
         }
     });
 
+    const netValue = shopsStockValue + debtorsValue - creditorsBalanceDoc2;
+
     const valueBreakdown = [
         ['Debtors Value:', `KSh ${debtorsValue.toLocaleString()}`],
         ['Shops Stock Value (Selling Price):', `KSh ${shopsStockValue.toLocaleString()}`],
@@ -3400,7 +3400,7 @@ async function generateDoc2PDF() {
     
     pdf.setFontSize(10);
     pdf.text(
-        `Net Stock Value = ${shopsStockValue.toLocaleString()} + ${debtorsValue.toLocaleString()} - ${totalCreditorsAmount.toLocaleString()}`,
+        `Net Stock Value = ${shopsStockValue.toLocaleString()} + ${debtorsValue.toLocaleString()} - ${creditorsBalanceDoc2.toLocaleString()}`,
         105,
         afterTable + 7,
         { align: 'center' }

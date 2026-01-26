@@ -1316,7 +1316,7 @@ async function loadCreditorsView() {
     const summaryTfoot = document.getElementById('creditors-summary-footer');
     
     // Add safety checks
-    if (!tbody || !tfoot || !summaryTbody || !summaryTfoot) {
+    if (!summaryTbody || !summaryTfoot) {
         console.error('Creditors view elements not found');
         showToast('Error loading creditors view', 'error');
         return;

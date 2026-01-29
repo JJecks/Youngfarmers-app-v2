@@ -184,11 +184,24 @@
 
             <!-- Summary Table -->
             <div class="card">
-                <h3 class="card-title">Outstanding Balances</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 class="card-title" style="margin: 0;">Outstanding Balances</h3>
+                    <div id="grouping-buttons" style="display: none;">
+                        <button class="btn-primary" onclick="groupSelectedClients()" style="margin-right: 10px; background: #1976d2; padding: 8px 15px;">
+                            📁 Group Selected
+                        </button>
+                        <button class="btn-primary" onclick="ungroupSelectedClients()" style="background: #d32f2f; padding: 8px 15px;">
+                            📂 Ungroup Selected
+                        </button>
+                    </div>
+                </div>
                 <div class="table-container">
-                    <table class="data-table">
+                    <table class="data-table" id="debtors-table">
                         <thead>
                             <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" id="select-all-debtors" onchange="toggleAllDebtorCheckboxes(this)">
+                                </th>
                                 <th>Debtor Name</th>
                                 <th>Phone Number</th>
                                 <th>Total Owed</th>

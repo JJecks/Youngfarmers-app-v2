@@ -1223,7 +1223,7 @@ async function loadDebtorsView() {
     summaryTbody.innerHTML = '';
     summaryTfoot.innerHTML = '';
 
-    const debtorBalances = {}; // Track per debtor: { name: { owed, paid } }
+    const debtorBalances = {}; // Track per debtor: { name: { owed, paid, parentClient } }
 
     // Collect all credit sales
     for (const shop of SHOPS) {
@@ -1239,9 +1239,19 @@ async function loadDebtorsView() {
 
                     // Track debtor balance
                     if (!debtorBalances[sale.debtorName]) {
-                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0, phoneNumber: sale.phoneNumber || 'Not Provided' };
+                        debtorBalances[sale.debtorName] = { 
+                            owed: 0, 
+                            paid: 0, 
+                            phoneNumber: sale.phoneNumber || 'Not Provided',
+                            parentClient: sale.parentClient || null
+                        };
                     }
                     debtorBalances[sale.debtorName].owed += amount;
+                    
+                    // Update parent info if it exists
+                    if (sale.parentClient) {
+                        debtorBalances[sale.debtorName].parentClient = sale.parentClient;
+                    }
                 });
             }
         });
@@ -1273,24 +1283,114 @@ async function loadDebtorsView() {
     let totalPaid = 0;
     let totalBalance = 0;
 
+    // Group debtors by parent
+    const groupedDebtors = {};
+    const ungroupedDebtors = [];
+    
     Object.entries(debtorBalances).forEach(([name, data]) => {
         const balance = data.owed - data.paid;
         
-        // Only show if there's an outstanding balance
+        // Only process if there's an outstanding balance
         if (balance > 0) {
-            totalOwed += data.owed;
-            totalPaid += data.paid;
-            totalBalance += balance;
-
-            const row = summaryTbody.insertRow();
-            row.innerHTML = `
-                <td style="font-weight: bold;">${name}</td>
-                <td>${data.phoneNumber || 'Not Provided'}</td>
-                <td style="text-align: right;">KSh ${data.owed.toLocaleString()}</td>
-                <td style="text-align: right; color: #2e7d32;">KSh ${data.paid.toLocaleString()}</td>
-                <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${balance.toLocaleString()}</td>
-            `;
+            if (data.parentClient) {
+                if (!groupedDebtors[data.parentClient]) {
+                    groupedDebtors[data.parentClient] = [];
+                }
+                groupedDebtors[data.parentClient].push({
+                    name: name,
+                    phoneNumber: data.phoneNumber,
+                    owed: data.owed,
+                    paid: data.paid,
+                    balance: balance
+                });
+            } else {
+                ungroupedDebtors.push({
+                    name: name,
+                    phoneNumber: data.phoneNumber,
+                    owed: data.owed,
+                    paid: data.paid,
+                    balance: balance
+                });
+            }
         }
+    });
+    
+    // Display grouped clients
+    Object.keys(groupedDebtors).sort().forEach(parentName => {
+        const branches = groupedDebtors[parentName];
+        const parentTotal = branches.reduce((sum, b) => sum + b.balance, 0);
+        const parentOwed = branches.reduce((sum, b) => sum + b.owed, 0);
+        const parentPaid = branches.reduce((sum, b) => sum + b.paid, 0);
+        const parentId = parentName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+        
+        totalOwed += parentOwed;
+        totalPaid += parentPaid;
+        totalBalance += parentTotal;
+        
+        const parentRow = summaryTbody.insertRow();
+        parentRow.className = 'parent-row';
+        parentRow.style.background = '#f5f5f5';
+        parentRow.style.fontWeight = 'bold';
+        parentRow.style.cursor = 'pointer';
+        parentRow.onclick = () => toggleBranches(parentId);
+        parentRow.innerHTML = `
+            <td>
+                <input type="checkbox" class="debtor-checkbox parent-checkbox" data-parent="${parentName}" onclick="event.stopPropagation(); toggleParentCheckbox(this)">
+            </td>
+            <td>
+                <span id="toggle-${parentId}" style="margin-right: 5px;">▼</span>
+                ${parentName}
+            </td>
+            <td></td>
+            <td style="text-align: right;">KSh ${parentOwed.toLocaleString()}</td>
+            <td style="text-align: right; color: #2e7d32;">KSh ${parentPaid.toLocaleString()}</td>
+            <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${parentTotal.toLocaleString()}</td>
+        `;
+        
+        branches.forEach((branch, index) => {
+            const isLast = index === branches.length - 1;
+            const branchPrefix = isLast ? '└─' : '├─';
+            
+            const branchRow = summaryTbody.insertRow();
+            branchRow.className = `branch-row branch-${parentId}`;
+            branchRow.style.display = 'table-row';
+            branchRow.innerHTML = `
+                <td>
+                    <input type="checkbox" class="debtor-checkbox branch-checkbox" 
+                           data-parent="${parentName}" 
+                           data-client="${branch.name}" 
+                           data-phone="${branch.phoneNumber}"
+                           onchange="updateGroupingButtons(); updateParentCheckbox('${parentName}')">
+                </td>
+                <td style="padding-left: 30px;">${branchPrefix} ${branch.name}</td>
+                <td>${branch.phoneNumber}</td>
+                <td style="text-align: right;">KSh ${branch.owed.toLocaleString()}</td>
+                <td style="text-align: right; color: #2e7d32;">KSh ${branch.paid.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${branch.balance.toLocaleString()}</td>
+            `;
+        });
+    });
+    
+    // Display ungrouped clients
+    ungroupedDebtors.forEach(debtor => {
+        totalOwed += debtor.owed;
+        totalPaid += debtor.paid;
+        totalBalance += debtor.balance;
+        
+        const row = summaryTbody.insertRow();
+        row.innerHTML = `
+            <td>
+                <input type="checkbox" class="debtor-checkbox ungrouped-checkbox" 
+                       data-client="${debtor.name}" 
+                       data-phone="${debtor.phoneNumber}"
+                       onchange="updateGroupingButtons()">
+            </td>
+            <td style="font-weight: bold;">${debtor.name}</td>
+            <td>${debtor.phoneNumber}</td>
+            <td style="text-align: right;">KSh ${debtor.owed.toLocaleString()}</td>
+            <td style="text-align: right; color: #2e7d32;">KSh ${debtor.paid.toLocaleString()}</td>
+            <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${debtor.balance.toLocaleString()}</td>
+        `;
     });
 
     // Summary footer
@@ -3449,4 +3549,180 @@ async function generateDoc2PDF() {
     // Save the PDF
     pdf.save('YFarmers Stock Value Book.pdf');
     showToast('PDF exported successfully!', 'success');
+    
+    // =============== DEBTOR GROUPING FUNCTIONS ===============
+function toggleAllDebtorCheckboxes(checkbox) {
+    document.querySelectorAll('.debtor-checkbox').forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateGroupingButtons();
+}
+
+function updateGroupingButtons() {
+    const checkedBoxes = document.querySelectorAll('.debtor-checkbox:checked');
+    const groupingButtons = document.getElementById('grouping-buttons');
+    
+    if (checkedBoxes.length > 0) {
+        groupingButtons.style.display = 'block';
+    } else {
+        groupingButtons.style.display = 'none';
+    }
+}
+
+function toggleParentCheckbox(parentCheckbox) {
+    const parentName = parentCheckbox.dataset.parent;
+    const branchCheckboxes = document.querySelectorAll(`.branch-checkbox[data-parent="${parentName}"]`);
+    
+    branchCheckboxes.forEach(cb => {
+        cb.checked = parentCheckbox.checked;
+    });
+    
+    updateGroupingButtons();
+}
+
+function updateParentCheckbox(parentName) {
+    const branchCheckboxes = document.querySelectorAll(`.branch-checkbox[data-parent="${parentName}"]`);
+    const parentCheckbox = document.querySelector(`.parent-checkbox[data-parent="${parentName}"]`);
+    
+    if (!parentCheckbox) return;
+    
+    const allChecked = Array.from(branchCheckboxes).every(cb => cb.checked);
+    const someChecked = Array.from(branchCheckboxes).some(cb => cb.checked);
+    
+    parentCheckbox.checked = allChecked;
+    parentCheckbox.indeterminate = someChecked && !allChecked;
+    
+    updateGroupingButtons();
+}
+
+function toggleBranches(parentId) {
+    const branches = document.querySelectorAll(`.branch-${parentId}`);
+    const toggle = document.getElementById(`toggle-${parentId}`);
+    
+    branches.forEach(branch => {
+        if (branch.style.display === 'none') {
+            branch.style.display = 'table-row';
+            toggle.textContent = '▼';
+        } else {
+            branch.style.display = 'none';
+            toggle.textContent = '▶';
+        }
+    });
+}
+
+async function groupSelectedClients() {
+    const checkedBoxes = document.querySelectorAll('.ungrouped-checkbox:checked');
+    
+    if (checkedBoxes.length < 2) {
+        showToast('Please select at least 2 clients to group', 'error');
+        return;
+    }
+    
+    const parentName = prompt('Enter parent company name:');
+    if (!parentName || parentName.trim() === '') {
+        showToast('Parent company name is required', 'error');
+        return;
+    }
+    
+    try {
+        const clientsToGroup = Array.from(checkedBoxes).map(cb => ({
+            name: cb.dataset.client,
+            phone: cb.dataset.phone
+        }));
+        
+        showToast('Grouping clients... Please wait', 'success');
+        
+        // Update each client's debtor records with parent info
+        for (const shop of SHOPS) {
+            const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+            const shopSnapshot = await getDocs(shopQuery);
+            
+            for (const docSnap of shopSnapshot.docs) {
+                const data = docSnap.data();
+                let updated = false;
+                
+                // Update credit sales
+                if (data.creditSales) {
+                    Object.keys(data.creditSales).forEach(txId => {
+                        const tx = data.creditSales[txId];
+                        const client = clientsToGroup.find(c => 
+                            c.name === tx.debtorName && c.phone === (tx.phoneNumber || 'Not Provided')
+                        );
+                        if (client) {
+                            data.creditSales[txId].parentClient = parentName.trim();
+                            updated = true;
+                        }
+                    });
+                }
+                
+                if (updated) {
+                    await setDoc(docSnap.ref, data);
+                }
+            }
+        }
+        
+        showToast('Clients grouped successfully!', 'success');
+        loadDebtorsView(); // Refresh the page
+    } catch (error) {
+        console.error('Error grouping clients:', error);
+        showToast('Error grouping clients: ' + error.message, 'error');
+    }
+}
+
+async function ungroupSelectedClients() {
+    const checkedBoxes = document.querySelectorAll('.branch-checkbox:checked');
+    
+    if (checkedBoxes.length === 0) {
+        showToast('Please select clients to ungroup', 'error');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to ungroup the selected clients?')) {
+        return;
+    }
+    
+    try {
+        const clientsToUngroup = Array.from(checkedBoxes).map(cb => ({
+            name: cb.dataset.client,
+            phone: cb.dataset.phone,
+            parent: cb.dataset.parent
+        }));
+        
+        showToast('Ungrouping clients... Please wait', 'success');
+        
+        // Remove parent info from each client's debtor records
+        for (const shop of SHOPS) {
+            const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+            const shopSnapshot = await getDocs(shopQuery);
+            
+            for (const docSnap of shopSnapshot.docs) {
+                const data = docSnap.data();
+                let updated = false;
+                
+                // Update credit sales
+                if (data.creditSales) {
+                    Object.keys(data.creditSales).forEach(txId => {
+                        const tx = data.creditSales[txId];
+                        const client = clientsToUngroup.find(c => 
+                            c.name === tx.debtorName && c.phone === (tx.phoneNumber || 'Not Provided')
+                        );
+                        if (client) {
+                            delete data.creditSales[txId].parentClient;
+                            updated = true;
+                        }
+                    });
+                }
+                
+                if (updated) {
+                    await setDoc(docSnap.ref, data);
+                }
+            }
+        }
+        
+        showToast('Clients ungrouped successfully!', 'success');
+        loadDebtorsView(); // Refresh the page
+    } catch (error) {
+        console.error('Error ungrouping clients:', error);
+        showToast('Error ungrouping clients: ' + error.message, 'error');
+    }
 }

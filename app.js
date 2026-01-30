@@ -3729,4 +3729,3 @@ async function ungroupSelectedClients() {
         showToast('Error ungrouping clients: ' + error.message, 'error');
     }
 }
-}

@@ -1396,6 +1396,7 @@ async function loadDebtorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
+        <td></td>
         <td colspan="2" style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>

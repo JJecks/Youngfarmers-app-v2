@@ -1396,6 +1396,7 @@ async function loadDebtorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
+        <td></td>
         <td colspan="2" style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
@@ -1501,10 +1502,11 @@ async function loadCreditorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
+        <td></td>
         <td colspan="2" style="font-weight: bold;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold;">${totalFeedsTaken.toFixed(1)} bags</td>
-        <td style="text-align: right; font-weight: bold;">KSh ${totalFeedsAmount.toLocaleString()}</td>
-        <td style="text-align: right; font-weight: bold; color: #f57c00; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #d32f2f; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
     `;
 
     // Store total creditor balance globally for Stock Value calculation

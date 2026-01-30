@@ -3551,6 +3551,7 @@ async function generateDoc2PDF() {
     // Save the PDF
     pdf.save('YFarmers Stock Value Book.pdf');
     showToast('PDF exported successfully!', 'success');
+}
     
     // =============== DEBTOR GROUPING FUNCTIONS ===============
 function toggleAllDebtorCheckboxes(checkbox) {

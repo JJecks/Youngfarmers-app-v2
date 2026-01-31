@@ -222,6 +222,56 @@
             </div>
         </div>
 
+        <!-- Notifications View -->
+        <div id="notifications-view" class="view-container" style="display: none;">
+    
+            <!-- Header -->
+            <div class="notifications-header">
+                <h2 class="view-title">Notifications</h2>
+                <button id="compose-message-btn" class="compose-btn">
+                    ✉️ New Message
+                </button>
+            </div>
+
+    <!-- Messages List -->
+    <div class="notifications-list">
+
+        <!-- Example message (normal) -->
+        <div class="notification-item">
+            <div class="notification-meta">
+                <span class="notification-sender">John Doe</span>
+                <span class="notification-shop">Usigu</span>
+                <span class="notification-time">10:45 AM</span>
+            </div>
+            <div class="notification-message">
+                Stock for Samakgro 2MM is almost finished.
+            </div>
+        </div>
+
+        <!-- Example message (edited) -->
+        <div class="notification-item edited">
+            <div class="notification-meta">
+                <span class="notification-sender">Mary A.</span>
+                <span class="notification-shop">Mbita</span>
+                <span class="notification-time">Yesterday</span>
+            </div>
+            <div class="notification-message">
+                Please confirm delivery schedule.
+                <span class="edited-label">(edited)</span>
+            </div>
+        </div>
+
+        <!-- Example message (deleted – admin view style) -->
+        <div class="notification-item deleted">
+            <div class="notification-message deleted-text">
+                This message was deleted by the sender.
+            </div>
+        </div>
+
+    </div>
+</div>
+
+
         <!-- Creditors View -->
         <div id="creditors-view" class="view-container" style="display: none;">
             <h2 class="view-title">Creditors</h2>

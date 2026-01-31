@@ -114,6 +114,17 @@ function setupSidePanelButtons() {
     }
 }
 
+function setupNotificationsNavigation() {
+    const notificationsBtn = document.getElementById('panel-notifications');
+
+    if (notificationsBtn) {
+        notificationsBtn.addEventListener('click', () => {
+            showView('notifications-view');
+        });
+    }
+}
+
+
 function showView(viewId) {
     document.querySelectorAll('.view-container').forEach(view => {
         view.style.display = 'none';
@@ -177,6 +188,7 @@ function showMainApp() {
     document.getElementById('user-role').textContent = roleText;
     loadDashboard();
     setupSidePanelButtons();
+    setupNotificationsNavigation();
 }
 
 function setupAppListeners() {

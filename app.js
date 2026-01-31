@@ -3561,17 +3561,6 @@ function toggleAllDebtorCheckboxes(checkbox) {
     updateGroupingButtons();
 }
 
-function updateGroupingButtons() {
-    const checkedBoxes = document.querySelectorAll('.debtor-checkbox:checked');
-    const groupingButtons = document.getElementById('grouping-buttons');
-    
-    if (checkedBoxes.length > 0) {
-        groupingButtons.style.display = 'block';
-    } else {
-        groupingButtons.style.display = 'none';
-    }
-}
-
 function toggleParentCheckbox(parentCheckbox) {
     const parentName = parentCheckbox.dataset.parent;
     const branchCheckboxes = document.querySelectorAll(`.branch-checkbox[data-parent="${parentName}"]`);
@@ -3596,6 +3585,22 @@ function updateParentCheckbox(parentName) {
     parentCheckbox.indeterminate = someChecked && !allChecked;
     
     updateGroupingButtons();
+}
+
+function updateGroupingButtons() {
+    const groupingButtons = document.getElementById('grouping-buttons');
+    if (!groupingButtons) return;
+
+    // Check all selected debtors (ungrouped + branch)
+    const checkedBoxes = document.querySelectorAll(
+        '.ungrouped-checkbox:checked, .branch-checkbox:checked'
+    );
+
+    if (checkedBoxes.length >= 2) {
+        groupingButtons.style.display = 'flex';
+    } else {
+        groupingButtons.style.display = 'none';
+    }
 }
 
 function toggleBranches(parentId) {

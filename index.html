@@ -74,6 +74,12 @@
 
         <!-- Dashboard -->
         <div id="dashboard-view" class="view-container">
+
+            <!-- Hamburger button -->
+            <div class="dashboard-hamburger">
+                <button id="hamburger-btn" class="hamburger-btn">☰</button>
+            </div>
+
             <h2 class="view-title">Dashboard</h2>
             <div id="dashboard-buttons" class="dashboard-grid"></div>
         </div>
@@ -599,5 +605,27 @@
     <script type="module" src="app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<!-- Sliding Side Panel -->
+<div id="side-panel" class="side-panel">
+    <div class="side-panel-content">
+        <h3 class="side-panel-title">Menu</h3>
+
+        <button id="panel-notifications" class="panel-btn">
+            🔔 Notifications
+        </button>
+
+        <button id="panel-receipts" class="panel-btn">
+            🧾 Generate Receipts
+        </button>
+
+        <button id="panel-invoices" class="panel-btn">
+            📄 Generate Invoices
+        </button>
+
+        <button id="panel-delivery" class="panel-btn">
+            🚚 Delivery Notes
+        </button>
+    </div>
+</div>
 </body>
 </html>

@@ -916,3 +916,62 @@ Regular Sales
 
 Credit Sales
 - debtorName: Sadia, feedType: Samakgro 2MM, bags: 5... [❌ Delete]
+
+/* Dashboard Hamburger */
+.dashboard-hamburger {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 5px;
+}
+
+.hamburger-btn {
+    font-size: 24px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #333;
+}
+
+/* Side Panel */
+.side-panel {
+    position: fixed;
+    top: 0;
+    right: -320px;
+    width: 300px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    box-shadow: -4px 0 10px rgba(0, 0, 0, 0.2);
+    transition: right 0.3s ease;
+    z-index: 2000;
+}
+
+.side-panel.open {
+    right: 0;
+}
+
+.side-panel-content {
+    padding: 20px;
+}
+
+.side-panel-title {
+    margin-bottom: 20px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.panel-btn {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 15px;
+    cursor: pointer;
+    background: #2e7d32;
+    color: white;
+}
+
+.panel-btn:hover {
+    opacity: 0.9;
+}

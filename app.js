@@ -3603,6 +3603,14 @@ function updateGroupingButtons() {
     }
 }
 
+// Make grouping functions available to inline HTML handlers
+window.updateGroupingButtons = updateGroupingButtons;
+window.groupSelectedClients = groupSelectedClients;
+window.ungroupSelectedClients = ungroupSelectedClients;
+window.toggleAllDebtorCheckboxes = toggleAllDebtorCheckboxes;
+window.toggleParentCheckbox = toggleParentCheckbox;
+window.updateParentCheckbox = updateParentCheckbox;
+
 function toggleBranches(parentId) {
     const branches = document.querySelectorAll(`.branch-${parentId}`);
     const toggle = document.getElementById(`toggle-${parentId}`);

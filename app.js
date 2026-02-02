@@ -120,6 +120,7 @@ function setupNotificationsNavigation() {
     if (notificationsBtn) {
         notificationsBtn.addEventListener('click', () => {
             showView('notifications-view');
+            subscribeToMessages();
         });
     }
 }
@@ -189,6 +190,8 @@ function showMainApp() {
     loadDashboard();
     setupSidePanelButtons();
     setupNotificationsNavigation();
+    setupComposeModal();
+    document.getElementById('send-message-btn').onclick = sendMessage;
 }
 
 function setupAppListeners() {
@@ -402,6 +405,73 @@ function calculateCreditorReleases(data, productId) {
     return total;
 }
 
+function subscribeToMessages() {
+    const list = document.getElementById('notifications-list');
+    if (!list) return;
+
+    const q = query(
+        collection(db, 'messages'),
+        orderBy('createdAt', 'desc')
+    );
+
+    onSnapshot(q, snapshot => {
+        list.innerHTML = '';
+
+        snapshot.forEach(docSnap => {
+            const m = docSnap.data();
+            const id = docSnap.id;
+
+            const isManager =
+              currentUserData.role === 'manager_full';
+
+            const visible =
+                isManager ||
+                m.senderId === currentUserData.uid ||
+                m.recipients.includes(currentUserData.uid);
+
+            if (!visible) return;
+
+            const deleted =
+                m.deletedBy.includes(currentUserData.uid) && !isManager;
+
+            if (deleted) return;
+
+            const div = document.createElement('div');
+            div.className = 'notification-item';
+
+            if (m.deletedBy.length && isManager) {
+                div.classList.add('deleted');
+                div.innerHTML = `<div class="deleted-text">
+                  This message was deleted by user
+                </div>`;
+            } else {
+                div.innerHTML = `
+                  <div class="notification-meta">
+                    <span class="notification-sender">${m.senderName}</span>
+                    <span class="notification-shop">${m.senderShop}</span>
+                  </div>
+                  <div class="notification-message">
+                    ${m.content}
+                    ${m.editedAt ? '<span class="edited-label">(edited)</span>' : ''}
+                  </div>
+                  <div class="notification-actions">
+                    ${m.senderId === currentUserData.uid
+                      ? `<span class="notification-action edit">Edit</span>`
+                      : ''}
+                    <span class="notification-action delete">Delete</span>
+                  </div>
+                `;
+            }
+
+            div.querySelector('.delete')?.addEventListener('click', () =>
+                softDeleteMessage(id)
+            );
+
+            list.appendChild(div);
+        });
+    });
+}
+
 function calculateClosingStock(data) {
     const closing = {};
     productsData.forEach(product => {
@@ -440,6 +510,93 @@ async function loadShopView(shop) {
 
     await loadShopData(shop, currentDate);
     setupTransactionForms(shop);
+}
+
+async function loadUsersForMessaging() {
+    const snapshot = await getDocs(collection(db, 'users'));
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    }));
+}
+
+async function setupComposeModal() {
+    const openBtn = document.getElementById('compose-message-btn');
+    const modal = document.getElementById('compose-modal');
+    const closeBtn = document.getElementById('close-compose-modal');
+    const recipientList = document.querySelector('.recipient-list');
+    const searchInput = document.getElementById('recipient-search');
+
+    let users = [];
+
+    if (!openBtn || !modal || !closeBtn) return;
+
+    openBtn.onclick = async () => {
+        modal.style.display = 'flex';
+        recipientList.innerHTML = '';
+        users = await loadUsersForMessaging();
+
+        users.forEach(user => {
+            if (user.id === currentUserData.uid) return;
+
+            const label = document.createElement('label');
+            label.className = 'recipient-item';
+            label.innerHTML = `
+              <input type="checkbox" value="${user.id}">
+              <span>${user.name} – ${user.shop || 'HQ'}</span>
+            `;
+            recipientList.appendChild(label);
+        });
+    };
+
+    closeBtn.onclick = () => modal.style.display = 'none';
+
+    modal.onclick = e => {
+        if (e.target === modal) modal.style.display = 'none';
+    };
+
+    searchInput.oninput = () => {
+        const term = searchInput.value.toLowerCase();
+        document.querySelectorAll('.recipient-item').forEach(item => {
+            item.style.display =
+                item.textContent.toLowerCase().includes(term)
+                    ? 'flex'
+                    : 'none';
+        });
+    };
+}
+
+async function softDeleteMessage(messageId) {
+    await updateDoc(doc(db, 'messages', messageId), {
+        deletedBy: arrayUnion(currentUserData.uid)
+    });
+}
+
+async function sendMessage() {
+    const checked = document.querySelectorAll('.recipient-item input:checked');
+    const text = document.getElementById('compose-message-text').value.trim();
+
+    if (!checked.length || !text) {
+        showToast('Select recipients and enter message', 'error');
+        return;
+    }
+
+    const recipients = Array.from(checked).map(i => i.value);
+
+    await addDoc(collection(db, 'messages'), {
+        senderId: currentUserData.uid,
+        senderName: currentUserData.name,
+        senderShop: currentUserData.shop,
+        recipients,
+        content: text,
+        createdAt: serverTimestamp(),
+        editedAt: null,
+        deletedBy: []
+    });
+
+    document.getElementById('compose-modal').style.display = 'none';
+    document.getElementById('compose-message-text').value = '';
+    showToast('Message sent', 'success');
 }
 
 async function loadShopData(shop, date) {

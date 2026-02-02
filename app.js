@@ -887,41 +887,152 @@ function showTransactionForm(formId, shop) {
     const container = document.getElementById('form-container');
     
     if (formId === 'sale') {
-        container.innerHTML = `
-            <div class="form-box" style="border-color: #2e7d32;">
-                <h4 style="color: #2e7d32;">Record a Sale</h4>
-                <form id="transaction-form" class="form-grid">
-                    <input type="text" class="form-input" id="form-client" placeholder="Client Name" required>
-                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
-                    <select class="form-input" id="form-feed" required>
-                        <option value="">Select Feed Type</option>
-                        ${productsData.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
-                    </select>
-                    <input type="number" step="0.1" min="0.1" class="form-input" id="form-bags" placeholder="Number of Bags" required>
-                    <input type="number" class="form-input" id="form-price" placeholder="Price" readonly style="background: #f5f5f5;">
-                    <input type="number" min="0" class="form-input" id="form-discount" placeholder="Discount (KSh)" value="0" required>
-                    <div class="form-buttons">
-                        <button type="submit" class="btn-save" style="background: #2e7d32;">Save</button>
-                        <button type="button" class="btn-cancel">Cancel</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        document.getElementById('form-feed').onchange = (e) => {
-            const product = productsData.find(p => p.id === e.target.value);
-            document.getElementById('form-price').value = product ? product.sales : '';
-        };
-        document.getElementById('transaction-form').onsubmit = async (e) => {
-            e.preventDefault();
-            await saveTransaction(shop, currentDate, 'regularSales', {
-                clientName: document.getElementById('form-client').value,
-                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
-                feedType: document.getElementById('form-feed').value,
-                bags: document.getElementById('form-bags').value,
-                price: document.getElementById('form-price').value,
-                discount: document.getElementById('form-discount').value
+        let feedItems = [{ id: 1, feedType: '', bags: '', price: 0 }];
+        let feedIdCounter = 2;
+        
+        const renderSaleForm = () => {
+            let subtotal = 0;
+            feedItems.forEach(item => {
+                if (item.feedType && item.bags) {
+                    const product = productsData.find(p => p.id === item.feedType);
+                    if (product) {
+                        item.price = product.sales * parseFloat(item.bags);
+                        subtotal += item.price;
+                    }
+                }
+            });
+            
+            const discount = parseFloat(document.getElementById('form-discount')?.value || 0);
+            const total = subtotal - discount;
+            
+            container.innerHTML = `
+                <div class="form-box" style="border-color: #2e7d32;">
+                    <h4 style="color: #2e7d32;">Record a Sale</h4>
+                    <form id="transaction-form">
+                        <div class="form-grid">
+                            <input type="text" class="form-input" id="form-client" placeholder="Client Name" required value="${document.getElementById('form-client')?.value || ''}">
+                            <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'" value="${document.getElementById('form-phone')?.value || ''}">
+                        </div>
+                        
+                        <div style="margin: 20px 0;">
+                            <h5 style="color: #2e7d32; margin-bottom: 10px;">Feed Items:</h5>
+                            <div id="feed-items-container">
+                                ${feedItems.map((item, index) => `
+                                    <div class="feed-item-row" data-item-id="${item.id}" style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px;">
+                                        <select class="form-input feed-select" data-item-id="${item.id}" required>
+                                            <option value="">Select Feed Type</option>
+                                            ${productsData.map(p => `<option value="${p.id}" ${item.feedType === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                        </select>
+                                        <input type="number" step="0.1" min="0.1" class="form-input bags-input" data-item-id="${item.id}" placeholder="Bags" value="${item.bags}" required>
+                                        <input type="text" class="form-input" value="KSh ${item.price.toLocaleString()}" readonly style="background: #f5f5f5; font-weight: bold;">
+                                        ${feedItems.length > 1 ? `<button type="button" class="btn-remove-feed" data-item-id="${item.id}" style="background: #d32f2f; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer;">✕</button>` : '<span></span>'}
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <button type="button" id="add-feed-btn" style="background: #1976d2; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px;">+ Add Another Feed</button>
+                        </div>
+                        
+                        <div style="background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span>Sub-total:</span>
+                                <strong>KSh ${subtotal.toLocaleString()}</strong>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin: 10px 0;">
+                                <span>Discount:</span>
+                                <input type="number" min="0" class="form-input" id="form-discount" placeholder="0" value="${discount}" style="text-align: right;">
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #2e7d32;">
+                                <span style="font-size: 1.2em; font-weight: bold;">TOTAL:</span>
+                                <strong style="font-size: 1.3em; color: #2e7d32;">KSh ${total.toLocaleString()}</strong>
+                            </div>
+                        </div>
+                        
+                        <div class="form-buttons">
+                            <button type="submit" class="btn-save" style="background: #2e7d32;">Save Transaction</button>
+                            <button type="button" class="btn-cancel">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            
+            // Event listeners
+            document.querySelectorAll('.feed-select').forEach(select => {
+                select.onchange = (e) => {
+                    const itemId = parseInt(e.target.dataset.itemId);
+                    const item = feedItems.find(i => i.id === itemId);
+                    if (item) {
+                        item.feedType = e.target.value;
+                        renderSaleForm();
+                    }
+                };
+            });
+            
+            document.querySelectorAll('.bags-input').forEach(input => {
+                input.oninput = (e) => {
+                    const itemId = parseInt(e.target.dataset.itemId);
+                    const item = feedItems.find(i => i.id === itemId);
+                    if (item) {
+                        item.bags = e.target.value;
+                        renderSaleForm();
+                    }
+                };
+            });
+            
+            document.querySelectorAll('.btn-remove-feed').forEach(btn => {
+                btn.onclick = (e) => {
+                    const itemId = parseInt(e.target.dataset.itemId);
+                    feedItems = feedItems.filter(i => i.id !== itemId);
+                    renderSaleForm();
+                };
+            });
+            
+            document.getElementById('add-feed-btn').onclick = () => {
+                feedItems.push({ id: feedIdCounter++, feedType: '', bags: '', price: 0 });
+                renderSaleForm();
+            };
+            
+            document.getElementById('form-discount').oninput = () => {
+                renderSaleForm();
+            };
+            
+            document.getElementById('transaction-form').onsubmit = async (e) => {
+                e.preventDefault();
+                
+                const clientName = document.getElementById('form-client').value;
+                const phoneNumber = document.getElementById('form-phone').value || 'Not Provided';
+                const discount = parseFloat(document.getElementById('form-discount').value || 0);
+                
+                // Build items array
+                const items = feedItems.map(item => {
+                    const product = productsData.find(p => p.id === item.feedType);
+                    return {
+                        feedType: item.feedType,
+                        feedName: product ? product.name : item.feedType,
+                        bags: parseFloat(item.bags),
+                        pricePerBag: product ? product.sales : 0,
+                        totalPrice: item.price
+                    };
+                });
+                
+                const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
+                const total = subtotal - discount;
+                
+                await saveTransaction(shop, currentDate, 'regularSales', {
+                    clientName,
+                    phoneNumber,
+                    items,
+                    subtotal,
+                    discount,
+                    total
+                });
+            };
+            
+            document.querySelectorAll('.btn-cancel').forEach(btn => {
+                btn.onclick = () => container.innerHTML = '';
             });
         };
+        
+        renderSaleForm();
     } else if (formId === 'restock') {
         container.innerHTML = `
             <div class="form-box" style="border-color: #1976d2;">

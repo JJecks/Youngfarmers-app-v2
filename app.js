@@ -1914,9 +1914,15 @@ async function loadProductsFromSettings() {
     const snap = await getDoc(ref);
 
     if (snap.exists()) {
-        productsData = snap.data().products || [];
+        const savedProducts = snap.data().products;
+
+        if (Array.isArray(savedProducts) && savedProducts.length > 0) {
+            productsData = savedProducts;
+        }
+        // else: keep existing productsData
     }
 }
+
 
 async function loadAllClientsView() {
     showView('all-clients-view');

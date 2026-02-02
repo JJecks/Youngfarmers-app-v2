@@ -857,11 +857,6 @@ async function saveTransaction(shop, date, collection, data) {
             ...existingData,
             [collection]: updatedCollection
         });
-        const today = getTodayDate();
-
-        if (date < today) {
-            await cascadeStockForward(shop, date);
-        }
         
         console.log('Transaction saved successfully to Firestore');
 
@@ -884,6 +879,11 @@ async function saveTransaction(shop, date, collection, data) {
                     }
                 }
             });
+        const today = getTodayDate();
+
+        if (date < today) {
+            await cascadeStockForward(shop, date);
+        }
         }
 
         showToast('Transaction saved successfully!', 'success');

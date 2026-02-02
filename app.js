@@ -1876,66 +1876,46 @@ async function loadStockValueData(date) {
 
 window.loadProductsView = loadProductsView;
 async function loadProductsView() {
-    console.log('=== loadProductsView called ===');
     showView('products-view');
-    
     const tbody = document.getElementById('products-body');
     if (!tbody) return;
-    
-    tbody.innerHTML = '<tr><td colspan="3">Loading data...</td></tr>';
 
-    try {
-        // 1. Try to get saved prices from Firebase
-        const docSnap = await getDoc(doc(db, 'settings', 'products'));
-        
-        if (docSnap.exists()) {
-            window.productsData = docSnap.data().products;
-        } else {
-            // 2. Fallback to the default PRODUCTS list if nothing is in Firebase
-            console.log('No saved products found, using defaults.');
-            window.productsData = JSON.parse(JSON.stringify(PRODUCTS));
-        }
+    tbody.innerHTML = '';
 
-        // 3. Clear and build the table
-        tbody.innerHTML = '';
-        window.productsData.forEach((product) => {
-            const row = tbody.insertRow();
-            row.innerHTML = `
-                <td>${product.name}</td>
-                <td><input type="number" class="form-input product-cost" data-id="${product.id}" value="${product.cost}"></td>
-                <td><input type="number" class="form-input product-sales" data-id="${product.id}" value="${product.sales}"></td>
-            `;
+    // Use the data we loaded at login
+    const dataToUse = window.productsData || PRODUCTS;
+
+    dataToUse.forEach((product) => {
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td>${product.name}</td>
+            <td><input type="number" class="form-input product-cost" data-id="${product.id}" value="${product.cost}"></td>
+            <td><input type="number" class="form-input product-sales" data-id="${product.id}" value="${product.sales}"></td>
+        `;
+    });
+
+    document.getElementById('save-prices').onclick = async () => {
+        const updatedList = [];
+        document.querySelectorAll('.product-cost').forEach(input => {
+            const id = input.dataset.id;
+            const salesInput = document.querySelector(`.product-sales[data-id="${id}"]`);
+            const name = dataToUse.find(p => p.id === id).name;
+            updatedList.push({
+                id: id,
+                name: name,
+                cost: parseFloat(input.value) || 0,
+                sales: parseFloat(salesInput.value) || 0
+            });
         });
 
-        // 4. Setup the Save Button
-        document.getElementById('save-prices').onclick = async () => {
-            const updatedList = [];
-            document.querySelectorAll('.product-cost').forEach(input => {
-                const id = input.dataset.id;
-                const salesInput = document.querySelector(`.product-sales[data-id="${id}"]`);
-                const original = window.productsData.find(p => p.id === id);
-                
-                updatedList.push({
-                    id: id,
-                    name: original.name,
-                    cost: parseFloat(input.value) || 0,
-                    sales: parseFloat(salesInput.value) || 0
-                });
-            });
-
-            try {
-                await setDoc(doc(db, 'settings', 'products'), { products: updatedList });
-                window.productsData = updatedList;
-                showToast('Prices saved to database!', 'success');
-            } catch (err) {
-                showToast('Save failed: ' + err.message, 'error');
-            }
-        };
-
-    } catch (error) {
-        console.error('View Error:', error);
-        tbody.innerHTML = '<tr><td colspan="3">Error loading products.</td></tr>';
-    }
+        try {
+            await setDoc(doc(db, 'settings', 'products'), { products: updatedList });
+            window.productsData = updatedList; // Save locally so other pages see it immediately
+            showToast('Prices saved! They will not revert now.', 'success');
+        } catch (err) {
+            showToast('Save failed: ' + err.message, 'error');
+        }
+    };
 }
 
 
@@ -4044,5 +4024,23 @@ async function ungroupSelectedClients() {
     } catch (error) {
         console.error('Error ungrouping clients:', error);
         showToast('Error ungrouping clients: ' + error.message, 'error');
+    }
+}
+
+// This function fetches the saved prices from the database so they don't revert on logout
+async function loadProductsFromSettings() {
+    try {
+        const docSnap = await getDoc(doc(db, 'settings', 'products'));
+        if (docSnap.exists()) {
+            window.productsData = docSnap.data().products;
+            console.log("Prices loaded from database");
+        } else {
+            // If none saved, use defaults from the top of app.js
+            window.productsData = JSON.parse(JSON.stringify(PRODUCTS));
+            console.log("No saved prices found, using defaults");
+        }
+    } catch (error) {
+        console.error("Error loading product settings:", error);
+        window.productsData = JSON.parse(JSON.stringify(PRODUCTS));
     }
 }

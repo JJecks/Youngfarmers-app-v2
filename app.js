@@ -178,7 +178,8 @@ function showPendingScreen() {
     document.getElementById('pending-screen').style.display = 'flex';
 }
 
-function showMainApp() {
+async function showMainApp() {
+    await loadProductsFromSettings();
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('pending-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -1906,6 +1907,15 @@ async function loadProductsView() {
             showToast('Error updating prices: ' + error.message, 'error');
         }
     };
+}
+
+async function loadProductsFromSettings() {
+    const ref = doc(db, 'settings', 'products');
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+        productsData = snap.data().products || [];
+    }
 }
 
 async function loadAllClientsView() {

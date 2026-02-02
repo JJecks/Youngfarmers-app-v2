@@ -349,7 +349,11 @@
 
         <!-- Products View -->
 <div id="products-view" class="view-container" style="display: none;">
-    <h2 class="view-title">Product Prices & Costs</h2>
+    <div class="view-header">
+        <h2 class="view-title">Product Price Management</h2>
+        <button onclick="showView('dashboard')" class="btn btn-secondary">Back</button>
+    </div>
+    
     <div class="card">
         <table class="data-table">
             <thead>
@@ -362,13 +366,12 @@
             <tbody id="products-body">
                 </tbody>
         </table>
-        <div style="margin-top: 20px;">
-            <button id="save-prices" class="btn btn-primary">Save Price Updates</button>
-            <button onclick="showView('dashboard')" class="btn btn-secondary">Back to Dashboard</button>
+        
+        <div class="form-actions" style="margin-top: 20px;">
+            <button id="save-prices" class="btn btn-primary" style="width: 100%;">Save All Price Updates</button>
         </div>
     </div>
 </div>
-
         <!-- All Clients View -->
         <div id="all-clients-view" class="view-container" style="display: none;">
             <h2 class="view-title">All Clients</h2>

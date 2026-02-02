@@ -1877,57 +1877,64 @@ async function loadStockValueData(date) {
 window.loadProductsView = loadProductsView;
 async function loadProductsView() {
     console.log('=== loadProductsView called ===');
-    console.log('productsData:', productsData);
-    console.log('window.productsData:', window.productsData);
     
+    // Safety check: if productsData isn't loaded yet, try to fetch it
+    if (typeof productsData === 'undefined' || !productsData || productsData.length === 0) {
+        console.log('productsData missing, attempting to fetch...');
+        try {
+            const docSnap = await getDoc(doc(db, 'settings', 'products'));
+            if (docSnap.exists()) {
+                window.productsData = docSnap.data().products;
+            } else {
+                // If database is empty, use the default list from the top of app.js
+                window.productsData = JSON.parse(JSON.stringify(PRODUCTS));
+            }
+        } catch (e) {
+            console.error('Failed to fetch products:', e);
+        }
+    }
+
     showView('products-view');
     
     const tbody = document.getElementById('products-body');
-    console.log('tbody element:', tbody);
-    
     if (!tbody) {
-        console.error('ERROR: products-body element not found!');
+        console.error('ERROR: products-body element not found in HTML!');
         return;
     }
     
     tbody.innerHTML = '';
-    console.log('Cleared tbody, now adding rows...');
 
-    if (!productsData || productsData.length === 0) {
-        console.error('ERROR: productsData is empty or undefined!');
-        tbody.innerHTML = '<tr><td colspan="3">No products available</td></tr>';
-        return;
-    }
-
-    productsData.forEach((product, index) => {
-        console.log(`Adding product ${index}:`, product);
+    window.productsData.forEach((product, index) => {
         const row = tbody.insertRow();
         row.innerHTML = `
             <td>${product.name}</td>
-            <td><input type="number" min="0" class="form-input product-cost" data-id="${product.id}" value="${product.cost}" ${currentUserData.role === 'manager_view' ? 'disabled' : ''}></td>
+            <td><input type="number" min="0" class="form-input product-cost" data-id="${product.id}" value="${product.cost}"></td>
             <td><input type="number" min="0" class="form-input product-sales" data-id="${product.id}" value="${product.sales}"></td>
         `;
     });
     
-    console.log('All rows added successfully');
+    console.log('Rows added to table');
 
     document.getElementById('save-prices').onclick = async () => {
-        const updates = {};
+        const updates = [];
         document.querySelectorAll('.product-cost').forEach(input => {
             const id = input.dataset.id;
-            const product = productsData.find(p => p.id === id);
-            product.cost = parseFloat(input.value) || 0;
-        });
-        document.querySelectorAll('.product-sales').forEach(input => {
-            const id = input.dataset.id;
-            const product = productsData.find(p => p.id === id);
-            product.sales = parseFloat(input.value) || 0;
+            const salesInput = document.querySelector(`.product-sales[data-id="${id}"]`);
+            const name = window.productsData.find(p => p.id === id).name;
+            updates.push({
+                id: id,
+                name: name,
+                cost: parseFloat(input.value) || 0,
+                sales: parseFloat(salesInput.value) || 0
+            });
         });
         
         try {
-            await setDoc(doc(db, 'settings', 'products'), { products: productsData });
+            await setDoc(doc(db, 'settings', 'products'), { products: updates });
+            window.productsData = updates; // Update the local data too
             showToast('Prices updated successfully!', 'success');
         } catch (error) {
+            console.error('Save error:', error);
             showToast('Error updating prices: ' + error.message, 'error');
         }
     };

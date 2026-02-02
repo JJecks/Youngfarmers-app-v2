@@ -348,26 +348,26 @@
         </div>
 
         <!-- Products View -->
-        <div id="products-view" class="view-container" style="display: none;">
-            <h2 class="view-title">Products</h2>
-            <div class="card">
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Product Name</th>
-                                <th>Cost Price (KSh)</th>
-                                <th>Sales Price (KSh)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="products-body"></tbody>
-                    </table>
-                </div>
-                <div class="button-group">
-                    <button id="save-prices" class="btn-primary">Save Prices</button>
-                </div>
-            </div>
+<div id="products-view" class="view-container" style="display: none;">
+    <h2 class="view-title">Product Prices & Costs</h2>
+    <div class="card">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Product Name</th>
+                    <th>Cost Price (Ksh)</th>
+                    <th>Selling Price (Ksh)</th>
+                </tr>
+            </thead>
+            <tbody id="products-body">
+                </tbody>
+        </table>
+        <div style="margin-top: 20px;">
+            <button id="save-prices" class="btn btn-primary">Save Price Updates</button>
+            <button onclick="showView('dashboard')" class="btn btn-secondary">Back to Dashboard</button>
         </div>
+    </div>
+</div>
 
         <!-- All Clients View -->
         <div id="all-clients-view" class="view-container" style="display: none;">

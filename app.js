@@ -466,8 +466,9 @@ async function loadShopData(shop, date) {
         const yesterdayDocRef = doc(db, 'shops', shop, 'daily', yesterday);
         const yesterdayDoc = await getDoc(yesterdayDocRef);
 
-        if (yesterdayDoc.exists()) {
-            openingStock = calculateClosingStock(yesterdayDoc.data());
+                if (previousDayData?.closingStock) {
+                    data.openingStock = previousDayData.closingStock;
+                }
             
             // AUTO-SAVE yesterday's closing as today's opening
             try {
@@ -617,6 +618,11 @@ function setupOpeningStockSave(shop, date, saved, isFirst) {
         try {
             await setDoc(doc(db, 'shops', shop, 'daily', date), { openingStock }, { merge: true });
             showToast('Opening stock saved successfully!', 'success');
+            const today = getTodayDate(); // same helper you already use
+
+            if (selectedDate < today) {
+            await cascadeStockForward(shopId, selectedDate);
+            }
             loadShopData(shop, date);
         } catch (error) {
             showToast('Error saving opening stock: ' + error.message, 'error');
@@ -1201,6 +1207,44 @@ async function loadTotalSalesView() {
         loadTotalSalesData(currentDate);
     };
     await loadTotalSalesData(currentDate);
+}
+
+async function cascadeStockForward(shopId, fromDate) {
+    // Get all dates >= fromDate sorted ascending
+    const dailyRef = collection(db, 'shops', shopId, 'daily');
+    const q = query(dailyRef, orderBy('date'));
+    const snap = await getDocs(q);
+
+    let prevClosing = null;
+
+    for (const docSnap of snap.docs) {
+        const date = docSnap.id;
+        const data = docSnap.data();
+
+        if (date < fromDate) {
+            prevClosing = data.closingStock || null;
+            continue;
+        }
+
+        if (!prevClosing) continue;
+
+        const openingStock = { ...prevClosing };
+
+        const closingStock = calculateClosingStock(
+            openingStock,
+            data.sales || {},
+            data.transfersIn || {},
+            data.transfersOut || {},
+            data.adjustments || {}
+        );
+
+        await updateDoc(doc(db, 'shops', shopId, 'daily', date), {
+            openingStock,
+            closingStock
+        });
+
+        prevClosing = closingStock;
+    }
 }
 
 async function loadTotalSalesData(date) {

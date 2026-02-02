@@ -1874,6 +1874,7 @@ async function loadStockValueData(date) {
     `;
 }
 
+window.loadProductsView = loadProductsView;
 async function loadProductsView() {
     console.log('=== loadProductsView called ===');
     console.log('productsData:', productsData);

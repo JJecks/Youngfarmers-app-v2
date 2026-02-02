@@ -1875,18 +1875,40 @@ async function loadStockValueData(date) {
 }
 
 async function loadProductsView() {
+    console.log('=== loadProductsView called ===');
+    console.log('productsData:', productsData);
+    console.log('window.productsData:', window.productsData);
+    
     showView('products-view');
+    
     const tbody = document.getElementById('products-body');
+    console.log('tbody element:', tbody);
+    
+    if (!tbody) {
+        console.error('ERROR: products-body element not found!');
+        return;
+    }
+    
     tbody.innerHTML = '';
+    console.log('Cleared tbody, now adding rows...');
 
-    productsData.forEach(product => {
+    if (!productsData || productsData.length === 0) {
+        console.error('ERROR: productsData is empty or undefined!');
+        tbody.innerHTML = '<tr><td colspan="3">No products available</td></tr>';
+        return;
+    }
+
+    productsData.forEach((product, index) => {
+        console.log(`Adding product ${index}:`, product);
         const row = tbody.insertRow();
         row.innerHTML = `
             <td>${product.name}</td>
-            <td><input type="number" min="0" class="form-input product-cost" data-id="${product.id}" value="${product.cost}" ${currentUserData.role === 'manager_view' ? '' : ''}></td>
+            <td><input type="number" min="0" class="form-input product-cost" data-id="${product.id}" value="${product.cost}" ${currentUserData.role === 'manager_view' ? 'disabled' : ''}></td>
             <td><input type="number" min="0" class="form-input product-sales" data-id="${product.id}" value="${product.sales}"></td>
         `;
     });
+    
+    console.log('All rows added successfully');
 
     document.getElementById('save-prices').onclick = async () => {
         const updates = {};

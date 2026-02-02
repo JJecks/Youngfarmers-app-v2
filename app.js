@@ -81,42 +81,6 @@ function getPreviousDate(dateStr) {
     return formatDate(date);
 }
 
-async function cascadeStockForward(shop, fromDate) {
-    const dailyRef = collection(db, 'shops', shop, 'daily');
-    const q = query(dailyRef, orderBy('__name__'));
-    const snapshot = await getDocs(q);
-
-    let previousClosing = null;
-
-    for (const docSnap of snapshot.docs) {
-        const date = docSnap.id;
-        const data = docSnap.data();
-
-        if (date < fromDate) {
-            previousClosing = data.closingStock || null;
-            continue;
-        }
-
-        if (!previousClosing) continue;
-
-        const openingStock = JSON.parse(JSON.stringify(previousClosing));
-        const closingStock = calculateClosingStock({
-            openingStock,
-            sales: data.sales || {},
-            transfersIn: data.transfersIn || {},
-            transfersOut: data.transfersOut || {},
-            adjustments: data.adjustments || {}
-        });
-
-        await updateDoc(doc(db, 'shops', shop, 'daily', date), {
-            openingStock,
-            closingStock
-        });
-
-        previousClosing = closingStock;
-    }
-}
-
 function formatBags(number) {
     return number % 1 === 0 ? number.toString() : number.toFixed(1);
 }
@@ -489,10 +453,37 @@ async function loadShopData(shop, date) {
 
     if (shopDoc.exists()) {
         const data = shopDoc.data();
-        openingStock = data.openingStock || {};
-        openingStockSaved = !!data.openingStock;
+        
+        // ALWAYS recalculate opening stock from yesterday's closing stock
+        const yesterday = getPreviousDate(date);
+        const yesterdayDocRef = doc(db, 'shops', shop, 'daily', yesterday);
+        const yesterdayDoc = await getDoc(yesterdayDocRef);
+        
+        if (yesterdayDoc.exists()) {
+            // Use yesterday's closing stock as today's opening stock
+            openingStock = calculateClosingStock(yesterdayDoc.data());
+            
+            // Update today's opening stock in Firebase if it changed
+            const savedOpeningStock = data.openingStock || {};
+            const hasChanged = JSON.stringify(openingStock) !== JSON.stringify(savedOpeningStock);
+            
+            if (hasChanged) {
+                try {
+                    await setDoc(shopDocRef, { openingStock }, { merge: true });
+                    console.log('Opening stock updated from yesterday\'s closing stock');
+                } catch (error) {
+                    console.error('Error updating opening stock:', error);
+                }
+            }
+        } else {
+            // No yesterday data - use saved opening stock
+            openingStock = data.openingStock || {};
+        }
+        
+        openingStockSaved = true;
         renderClosingStockTable(shop, date, openingStock, shopDoc.data(), openingStockSaved, false);
-        if (openingStockSaved && currentUserData) {
+        
+        if (currentUserData) {
             document.getElementById('transaction-forms').style.display = 'block';
             document.getElementById('recorded-transactions').style.display = 'block';
             renderRecordedTransactions(shopDoc.data(), shop, date);
@@ -506,16 +497,19 @@ async function loadShopData(shop, date) {
             openingStock = calculateClosingStock(yesterdayDoc.data());
             
             // AUTO-SAVE yesterday's closing as today's opening
-            // ALWAYS derive opening stock from yesterday
-            openingStock = calculateClosingStock(yesterdayDoc.data());
-
-            renderClosingStockTable(shop, date, openingStock, null, true, false);
-
-            if (currentUserData) {
-                document.getElementById('transaction-forms').style.display = 'block';
-                document.getElementById('recorded-transactions').style.display = 'block';
-            }
-
+            try {
+                await setDoc(doc(db, 'shops', shop, 'daily', date), { 
+                    openingStock 
+                }, { merge: true });
+                
+                openingStockSaved = true;
+                renderClosingStockTable(shop, date, openingStock, null, true, false);
+                
+                // Show transaction forms immediately
+                if (currentUserData) {
+                    document.getElementById('transaction-forms').style.display = 'block';
+                    document.getElementById('recorded-transactions').style.display = 'block';
+                }
             } catch (error) {
                 showToast('Error auto-saving opening stock: ' + error.message, 'error');
                 renderClosingStockTable(shop, date, openingStock, null, false, false);
@@ -879,11 +873,6 @@ async function saveTransaction(shop, date, collection, data) {
                     }
                 }
             });
-        const today = getTodayDate();
-
-        if (date < today) {
-            await cascadeStockForward(shop, date);
-        }
         }
 
         showToast('Transaction saved successfully!', 'success');

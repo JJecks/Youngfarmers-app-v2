@@ -81,6 +81,42 @@ function getPreviousDate(dateStr) {
     return formatDate(date);
 }
 
+async function cascadeStockForward(shop, fromDate) {
+    const dailyRef = collection(db, 'shops', shop, 'daily');
+    const q = query(dailyRef, orderBy('__name__'));
+    const snapshot = await getDocs(q);
+
+    let previousClosing = null;
+
+    for (const docSnap of snapshot.docs) {
+        const date = docSnap.id;
+        const data = docSnap.data();
+
+        if (date < fromDate) {
+            previousClosing = data.closingStock || null;
+            continue;
+        }
+
+        if (!previousClosing) continue;
+
+        const openingStock = JSON.parse(JSON.stringify(previousClosing));
+        const closingStock = calculateClosingStock({
+            openingStock,
+            sales: data.sales || {},
+            transfersIn: data.transfersIn || {},
+            transfersOut: data.transfersOut || {},
+            adjustments: data.adjustments || {}
+        });
+
+        await updateDoc(doc(db, 'shops', shop, 'daily', date), {
+            openingStock,
+            closingStock
+        });
+
+        previousClosing = closingStock;
+    }
+}
+
 function formatBags(number) {
     return number % 1 === 0 ? number.toString() : number.toFixed(1);
 }
@@ -466,24 +502,20 @@ async function loadShopData(shop, date) {
         const yesterdayDocRef = doc(db, 'shops', shop, 'daily', yesterday);
         const yesterdayDoc = await getDoc(yesterdayDocRef);
 
-                if (previousDayData?.closingStock) {
-                    data.openingStock = previousDayData.closingStock;
-                }
+        if (yesterdayDoc.exists()) {
+            openingStock = calculateClosingStock(yesterdayDoc.data());
             
             // AUTO-SAVE yesterday's closing as today's opening
-            try {
-                await setDoc(doc(db, 'shops', shop, 'daily', date), { 
-                    openingStock 
-                }, { merge: true });
-                
-                openingStockSaved = true;
-                renderClosingStockTable(shop, date, openingStock, null, true, false);
-                
-                // Show transaction forms immediately
-                if (currentUserData) {
-                    document.getElementById('transaction-forms').style.display = 'block';
-                    document.getElementById('recorded-transactions').style.display = 'block';
-                }
+            // ALWAYS derive opening stock from yesterday
+            openingStock = calculateClosingStock(yesterdayDoc.data());
+
+            renderClosingStockTable(shop, date, openingStock, null, true, false);
+
+            if (currentUserData) {
+                document.getElementById('transaction-forms').style.display = 'block';
+                document.getElementById('recorded-transactions').style.display = 'block';
+            }
+
             } catch (error) {
                 showToast('Error auto-saving opening stock: ' + error.message, 'error');
                 renderClosingStockTable(shop, date, openingStock, null, false, false);
@@ -618,11 +650,6 @@ function setupOpeningStockSave(shop, date, saved, isFirst) {
         try {
             await setDoc(doc(db, 'shops', shop, 'daily', date), { openingStock }, { merge: true });
             showToast('Opening stock saved successfully!', 'success');
-            const today = getTodayDate(); // same helper you already use
-
-            if (selectedDate < today) {
-            await cascadeStockForward(shopId, selectedDate);
-            }
             loadShopData(shop, date);
         } catch (error) {
             showToast('Error saving opening stock: ' + error.message, 'error');
@@ -830,6 +857,11 @@ async function saveTransaction(shop, date, collection, data) {
             ...existingData,
             [collection]: updatedCollection
         });
+        const today = getTodayDate();
+
+        if (date < today) {
+            await cascadeStockForward(shop, date);
+        }
         
         console.log('Transaction saved successfully to Firestore');
 
@@ -1207,44 +1239,6 @@ async function loadTotalSalesView() {
         loadTotalSalesData(currentDate);
     };
     await loadTotalSalesData(currentDate);
-}
-
-async function cascadeStockForward(shopId, fromDate) {
-    // Get all dates >= fromDate sorted ascending
-    const dailyRef = collection(db, 'shops', shopId, 'daily');
-    const q = query(dailyRef, orderBy('date'));
-    const snap = await getDocs(q);
-
-    let prevClosing = null;
-
-    for (const docSnap of snap.docs) {
-        const date = docSnap.id;
-        const data = docSnap.data();
-
-        if (date < fromDate) {
-            prevClosing = data.closingStock || null;
-            continue;
-        }
-
-        if (!prevClosing) continue;
-
-        const openingStock = { ...prevClosing };
-
-        const closingStock = calculateClosingStock(
-            openingStock,
-            data.sales || {},
-            data.transfersIn || {},
-            data.transfersOut || {},
-            data.adjustments || {}
-        );
-
-        await updateDoc(doc(db, 'shops', shopId, 'daily', date), {
-            openingStock,
-            closingStock
-        });
-
-        prevClosing = closingStock;
-    }
 }
 
 async function loadTotalSalesData(date) {

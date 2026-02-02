@@ -37,6 +37,7 @@ let currentUserData = null;
 let currentShop = null;
 let currentDate = formatDate(new Date());
 let productsData = [...PRODUCTS];
+window.productsData = productsData;
 window.currentUserData = null;
 
 function formatDate(date) {
@@ -1918,6 +1919,7 @@ async function loadProductsFromSettings() {
 
         if (Array.isArray(savedProducts) && savedProducts.length > 0) {
             productsData = savedProducts;
+            window.productsData = productsData;
         }
         // else: keep existing productsData
     }

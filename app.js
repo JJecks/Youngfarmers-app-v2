@@ -36,8 +36,7 @@ let currentUser = null;
 let currentUserData = null;
 let currentShop = null;
 let currentDate = formatDate(new Date());
-let productsData = [...PRODUCTS];
-window.productsData = productsData;
+let productsData = [];
 window.currentUserData = null;
 
 function formatDate(date) {
@@ -121,7 +120,6 @@ function setupNotificationsNavigation() {
     if (notificationsBtn) {
         notificationsBtn.addEventListener('click', () => {
             showView('notifications-view');
-            subscribeToMessages();
         });
     }
 }
@@ -180,7 +178,7 @@ function showPendingScreen() {
 }
 
 async function showMainApp() {
-    await loadProductsFromSettings();
+    await loadProductsFromFirestore();
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('pending-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -192,8 +190,6 @@ async function showMainApp() {
     loadDashboard();
     setupSidePanelButtons();
     setupNotificationsNavigation();
-    setupComposeModal();
-    document.getElementById('send-message-btn').onclick = sendMessage;
 }
 
 function setupAppListeners() {
@@ -407,73 +403,6 @@ function calculateCreditorReleases(data, productId) {
     return total;
 }
 
-function subscribeToMessages() {
-    const list = document.getElementById('notifications-list');
-    if (!list) return;
-
-    const q = query(
-        collection(db, 'messages'),
-        orderBy('createdAt', 'desc')
-    );
-
-    onSnapshot(q, snapshot => {
-        list.innerHTML = '';
-
-        snapshot.forEach(docSnap => {
-            const m = docSnap.data();
-            const id = docSnap.id;
-
-            const isManager =
-              currentUserData.role === 'manager_full';
-
-            const visible =
-                isManager ||
-                m.senderId === currentUserData.uid ||
-                m.recipients.includes(currentUserData.uid);
-
-            if (!visible) return;
-
-            const deleted =
-                m.deletedBy.includes(currentUserData.uid) && !isManager;
-
-            if (deleted) return;
-
-            const div = document.createElement('div');
-            div.className = 'notification-item';
-
-            if (m.deletedBy.length && isManager) {
-                div.classList.add('deleted');
-                div.innerHTML = `<div class="deleted-text">
-                  This message was deleted by user
-                </div>`;
-            } else {
-                div.innerHTML = `
-                  <div class="notification-meta">
-                    <span class="notification-sender">${m.senderName}</span>
-                    <span class="notification-shop">${m.senderShop}</span>
-                  </div>
-                  <div class="notification-message">
-                    ${m.content}
-                    ${m.editedAt ? '<span class="edited-label">(edited)</span>' : ''}
-                  </div>
-                  <div class="notification-actions">
-                    ${m.senderId === currentUserData.uid
-                      ? `<span class="notification-action edit">Edit</span>`
-                      : ''}
-                    <span class="notification-action delete">Delete</span>
-                  </div>
-                `;
-            }
-
-            div.querySelector('.delete')?.addEventListener('click', () =>
-                softDeleteMessage(id)
-            );
-
-            list.appendChild(div);
-        });
-    });
-}
-
 function calculateClosingStock(data) {
     const closing = {};
     productsData.forEach(product => {
@@ -512,93 +441,6 @@ async function loadShopView(shop) {
 
     await loadShopData(shop, currentDate);
     setupTransactionForms(shop);
-}
-
-async function loadUsersForMessaging() {
-    const snapshot = await getDocs(collection(db, 'users'));
-    return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-    }));
-}
-
-async function setupComposeModal() {
-    const openBtn = document.getElementById('compose-message-btn');
-    const modal = document.getElementById('compose-modal');
-    const closeBtn = document.getElementById('close-compose-modal');
-    const recipientList = document.querySelector('.recipient-list');
-    const searchInput = document.getElementById('recipient-search');
-
-    let users = [];
-
-    if (!openBtn || !modal || !closeBtn) return;
-
-    openBtn.onclick = async () => {
-        modal.style.display = 'flex';
-        recipientList.innerHTML = '';
-        users = await loadUsersForMessaging();
-
-        users.forEach(user => {
-            if (user.id === currentUserData.uid) return;
-
-            const label = document.createElement('label');
-            label.className = 'recipient-item';
-            label.innerHTML = `
-              <input type="checkbox" value="${user.id}">
-              <span>${user.name} – ${user.shop || 'HQ'}</span>
-            `;
-            recipientList.appendChild(label);
-        });
-    };
-
-    closeBtn.onclick = () => modal.style.display = 'none';
-
-    modal.onclick = e => {
-        if (e.target === modal) modal.style.display = 'none';
-    };
-
-    searchInput.oninput = () => {
-        const term = searchInput.value.toLowerCase();
-        document.querySelectorAll('.recipient-item').forEach(item => {
-            item.style.display =
-                item.textContent.toLowerCase().includes(term)
-                    ? 'flex'
-                    : 'none';
-        });
-    };
-}
-
-async function softDeleteMessage(messageId) {
-    await updateDoc(doc(db, 'messages', messageId), {
-        deletedBy: arrayUnion(currentUserData.uid)
-    });
-}
-
-async function sendMessage() {
-    const checked = document.querySelectorAll('.recipient-item input:checked');
-    const text = document.getElementById('compose-message-text').value.trim();
-
-    if (!checked.length || !text) {
-        showToast('Select recipients and enter message', 'error');
-        return;
-    }
-
-    const recipients = Array.from(checked).map(i => i.value);
-
-    await addDoc(collection(db, 'messages'), {
-        senderId: currentUserData.uid,
-        senderName: currentUserData.name,
-        senderShop: currentUserData.shop,
-        recipients,
-        content: text,
-        createdAt: serverTimestamp(),
-        editedAt: null,
-        deletedBy: []
-    });
-
-    document.getElementById('compose-modal').style.display = 'none';
-    document.getElementById('compose-message-text').value = '';
-    showToast('Message sent', 'success');
 }
 
 async function loadShopData(shop, date) {
@@ -1874,50 +1716,62 @@ async function loadStockValueData(date) {
     `;
 }
 
-window.loadProductsView = loadProductsView;
 async function loadProductsView() {
     showView('products-view');
     const tbody = document.getElementById('products-body');
-    if (!tbody) return;
-
     tbody.innerHTML = '';
 
-    // Use the data we loaded at login
-    const dataToUse = window.productsData || PRODUCTS;
-
-    dataToUse.forEach((product) => {
+    productsData.forEach(product => {
         const row = tbody.insertRow();
         row.innerHTML = `
             <td>${product.name}</td>
-            <td><input type="number" class="form-input product-cost" data-id="${product.id}" value="${product.cost}"></td>
-            <td><input type="number" class="form-input product-sales" data-id="${product.id}" value="${product.sales}"></td>
+            <td><input type="number" min="0" class="form-input product-cost" data-id="${product.id}" value="${product.cost}" ${currentUserData.role === 'manager_view' ? '' : ''}></td>
+            <td><input type="number" min="0" class="form-input product-sales" data-id="${product.id}" value="${product.sales}"></td>
         `;
     });
 
-    document.getElementById('save-prices').onclick = async () => {
-        const updatedList = [];
-        document.querySelectorAll('.product-cost').forEach(input => {
-            const id = input.dataset.id;
-            const salesInput = document.querySelector(`.product-sales[data-id="${id}"]`);
-            const name = dataToUse.find(p => p.id === id).name;
-            updatedList.push({
-                id: id,
-                name: name,
-                cost: parseFloat(input.value) || 0,
-                sales: parseFloat(salesInput.value) || 0
-            });
-        });
+document.getElementById('save-prices').onclick = async () => {
+    document.querySelectorAll('.product-cost').forEach(input => {
+        const p = productsData.find(x => x.id === input.dataset.id);
+        if (p) p.cost = Number(input.value) || 0;
+    });
 
-        try {
-            await setDoc(doc(db, 'settings', 'products'), { products: updatedList });
-            window.productsData = updatedList; // Save locally so other pages see it immediately
-            showToast('Prices saved! They will not revert now.', 'success');
-        } catch (err) {
-            showToast('Save failed: ' + err.message, 'error');
-        }
-    };
+    document.querySelectorAll('.product-sales').forEach(input => {
+        const p = productsData.find(x => x.id === input.dataset.id);
+        if (p) p.sales = Number(input.value) || 0;
+    });
+
+    try {
+        await setDoc(
+            doc(db, 'settings', 'products'),
+            { products: productsData, updatedAt: serverTimestamp() },
+            { merge: true }
+        );
+
+        showToast('Prices saved permanently', 'success');
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+};
+
 }
 
+async function loadProductsFromFirestore() {
+    const ref = doc(db, 'settings', 'products');
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+        productsData = snap.data().products || [];
+    } else {
+        // First-time setup ONLY
+        productsData = DEFAULT_PRODUCTS;
+
+        await setDoc(ref, {
+            products: productsData,
+            createdAt: serverTimestamp()
+        });
+    }
+}
 
 async function loadAllClientsView() {
     showView('all-clients-view');
@@ -4024,23 +3878,5 @@ async function ungroupSelectedClients() {
     } catch (error) {
         console.error('Error ungrouping clients:', error);
         showToast('Error ungrouping clients: ' + error.message, 'error');
-    }
-}
-
-// This function fetches the saved prices from the database so they don't revert on logout
-async function loadProductsFromSettings() {
-    try {
-        const docSnap = await getDoc(doc(db, 'settings', 'products'));
-        if (docSnap.exists()) {
-            window.productsData = docSnap.data().products;
-            console.log("Prices loaded from database");
-        } else {
-            // If none saved, use defaults from the top of app.js
-            window.productsData = JSON.parse(JSON.stringify(PRODUCTS));
-            console.log("No saved prices found, using defaults");
-        }
-    } catch (error) {
-        console.error("Error loading product settings:", error);
-        window.productsData = JSON.parse(JSON.stringify(PRODUCTS));
     }
 }

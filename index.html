@@ -222,54 +222,86 @@
             </div>
         </div>
 
-        <!-- Notifications View -->
-        <div id="notifications-view" class="view-container" style="display: none;">
-    
-            <!-- Header -->
-            <div class="notifications-header">
-                <h2 class="view-title">Notifications</h2>
-                <button id="compose-message-btn" class="compose-btn">
-                    ✉️ New Message
-                </button>
+        <!-- Notifications / Messaging View -->
+        <div id="notifications-view" class="view-container" style="display: none; padding: 0 !important;">
+            <!-- Tab Bar -->
+            <div class="msg-tabs">
+                <button class="msg-tab active" data-tab="chats">💬 Messages</button>
+                <button class="msg-tab" id="all-messages-tab" data-tab="all-messages" style="display:none;">📋 All Messages</button>
             </div>
 
-    <!-- Messages List -->
-    <div class="notifications-list">
-
-        <!-- Example message (normal) -->
-        <div class="notification-item">
-            <div class="notification-meta">
-                <span class="notification-sender">John Doe</span>
-                <span class="notification-shop">Usigu</span>
-                <span class="notification-time">10:45 AM</span>
+            <!-- CHATS LIST PANEL -->
+            <div id="chats-panel" class="msg-tab-content active">
+                <div class="chat-list-header">
+                    <h3 class="chat-list-title">Chats</h3>
+                    <button id="compose-message-btn" class="compose-btn">✉️ New</button>
+                </div>
+                <div id="chat-list" class="chat-list">
+                    <div class="chat-empty-state" id="chat-empty-state">
+                        <div class="chat-empty-icon">💬</div>
+                        <p>No conversations yet.<br>Tap <strong>New</strong> to start one.</p>
+                    </div>
+                </div>
             </div>
-            <div class="notification-message">
-                Stock for Samakgro 2MM is almost finished.
+
+            <!-- ACTIVE CHAT VIEW -->
+            <div id="active-chat-panel" class="active-chat-panel" style="display:none;">
+                <div class="chat-header">
+                    <button id="chat-back-btn" class="chat-back-btn">←</button>
+                    <div class="chat-header-info">
+                        <div class="chat-header-avatar" id="chat-header-avatar">?</div>
+                        <div>
+                            <div class="chat-header-name" id="chat-header-name">—</div>
+                            <div class="chat-header-sub" id="chat-header-sub">—</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="chat-messages" class="chat-messages"></div>
+                <div class="chat-compose-bar">
+                    <textarea id="chat-input" class="chat-input" placeholder="Type a message…" rows="1"></textarea>
+                    <button id="chat-send-btn" class="chat-send-btn">▶</button>
+                </div>
+            </div>
+
+            <!-- ALL MESSAGES ADMIN VIEW -->
+            <div id="all-messages-panel" class="msg-tab-content" style="display:none;">
+                <div class="all-msg-header">
+                    <h3 class="chat-list-title">All Messages</h3>
+                    <button id="hard-delete-cleared-btn" class="hard-delete-btn" style="display:none;">🗑️ Hard Delete Cleared</button>
+                </div>
+                <div id="all-messages-list" class="all-messages-list"></div>
             </div>
         </div>
 
-        <!-- Example message (edited) -->
-        <div class="notification-item edited">
-            <div class="notification-meta">
-                <span class="notification-sender">Mary A.</span>
-                <span class="notification-shop">Mbita</span>
-                <span class="notification-time">Yesterday</span>
-            </div>
-            <div class="notification-message">
-                Please confirm delivery schedule.
-                <span class="edited-label">(edited)</span>
-            </div>
-        </div>
-
-        <!-- Example message (deleted – admin view style) -->
-        <div class="notification-item deleted">
-            <div class="notification-message deleted-text">
-                This message was deleted by the sender.
+        <!-- NEW MESSAGE MODAL -->
+        <div id="new-message-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-box new-msg-modal">
+                <div class="modal-header">
+                    <h4>New Message</h4>
+                    <button class="modal-close" id="new-msg-modal-close">✕</button>
+                </div>
+                <div class="new-msg-recipients-wrap">
+                    <label class="new-msg-label">To:</label>
+                    <div id="new-msg-chips" class="new-msg-chips"></div>
+                    <input type="text" id="new-msg-search" class="new-msg-search-input" placeholder="Search by name, role or shop…" autocomplete="off">
+                    <div id="new-msg-dropdown" class="new-msg-dropdown" style="display:none;"></div>
+                </div>
+                <textarea id="new-msg-body" class="new-msg-body" placeholder="Type a message…" rows="3"></textarea>
+                <button id="new-msg-send-btn" class="new-msg-send-btn">Send Message</button>
             </div>
         </div>
 
-    </div>
-</div>
+        <!-- EDIT MESSAGE MODAL -->
+        <div id="edit-message-modal" class="modal-overlay" style="display:none;">
+            <div class="modal-box edit-msg-modal">
+                <div class="modal-header">
+                    <h4>Edit Message</h4>
+                    <button class="modal-close" id="edit-msg-modal-close">✕</button>
+                </div>
+                <textarea id="edit-msg-body" class="new-msg-body" rows="3"></textarea>
+                <button id="edit-msg-save-btn" class="new-msg-send-btn">Save Changes</button>
+            </div>
+        </div>
 
 
         <!-- Creditors View -->
@@ -662,6 +694,7 @@
 
         <button id="panel-notifications" class="panel-btn">
             🔔 Notifications
+            <span id="unread-badge" class="unread-badge" style="display:none;">0</span>
         </button>
 
         <button id="panel-receipts" class="panel-btn">

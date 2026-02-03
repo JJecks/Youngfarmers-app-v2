@@ -17,7 +17,11 @@ import {
     deleteDoc,
     query,
     where,
-    orderBy
+    orderBy,
+    onSnapshot,
+    addDoc,
+    serverTimestamp,
+    limit
 } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
 const ADMIN_EMAIL = 'jeckstom777@gmail.com';
@@ -38,6 +42,13 @@ let currentShop = null;
 let currentDate = formatDate(new Date());
 let productsData = [];
 window.currentUserData = null;
+
+// ── Messaging globals ──
+let activeChatId = null;
+let activeChatMeta = null;
+let unsubChatList = null;
+let unsubActiveChat = null;
+let allUsersCache = [];
 
 function formatDate(date) {
     const d = new Date(date);
@@ -190,6 +201,7 @@ async function showMainApp() {
     loadDashboard();
     setupSidePanelButtons();
     setupNotificationsNavigation();
+    initMessaging();
 }
 
 function setupAppListeners() {
@@ -372,24 +384,12 @@ function calculateSold(data, productId) {
     let total = 0;
     if (data?.regularSales) {
         Object.values(data.regularSales).forEach(s => {
-            if (s.items && Array.isArray(s.items)) {
-                s.items.forEach(item => {
-                    if (item.feedType === productId) total += parseFloat(item.bags || 0);
-                });
-            } else if (s.feedType === productId) {
-                total += parseFloat(s.bags || 0);
-            }
+            if (s.feedType === productId) total += parseFloat(s.bags || 0);
         });
     }
     if (data?.creditSales) {
         Object.values(data.creditSales).forEach(s => {
-            if (s.items && Array.isArray(s.items)) {
-                s.items.forEach(item => {
-                    if (item.feedType === productId) total += parseFloat(item.bags || 0);
-                });
-            } else if (s.feedType === productId) {
-                total += parseFloat(s.bags || 0);
-            }
+            if (s.feedType === productId) total += parseFloat(s.bags || 0);
         });
     }
     return total;
@@ -409,45 +409,10 @@ function calculateCreditorReleases(data, productId) {
     let total = 0;
     if (data?.creditorReleases) {
         Object.values(data.creditorReleases).forEach(c => {
-            if (c.items && Array.isArray(c.items)) {
-                c.items.forEach(item => {
-                    if (item.feedType === productId) total += parseFloat(item.bags || 0);
-                });
-            } else if (c.feedType === productId) {
-                total += parseFloat(c.bags || 0);
-            }
+            if (c.feedType === productId) total += parseFloat(c.bags || 0);
         });
     }
     return total;
-}
-
-function calculateSalesRevenueByProduct(data, productId) {
-    let revenue = 0;
-    const collections = ['regularSales', 'creditSales'];
-    collections.forEach(col => {
-        if (data?.[col]) {
-            Object.values(data[col]).forEach(sale => {
-                if (sale.items && Array.isArray(sale.items)) {
-                    // New multi-feed format — distribute discount proportionally
-                    const subtotal = sale.subtotal || sale.items.reduce((sum, i) => sum + (i.totalPrice || 0), 0);
-                    const discount = parseFloat(sale.discount || 0);
-                    sale.items.forEach(item => {
-                        if (item.feedType === productId) {
-                            const itemRevenue = subtotal > 0
-                                ? item.totalPrice - (discount * item.totalPrice / subtotal)
-                                : item.totalPrice;
-                            revenue += itemRevenue;
-                        }
-                    });
-                } else if (sale.feedType === productId) {
-                    // Old single-feed format
-                    const itemRevenue = (parseFloat(sale.bags || 0) * parseFloat(sale.price || 0)) - parseFloat(sale.discount || 0);
-                    revenue += itemRevenue;
-                }
-            });
-        }
-    });
-    return revenue;
 }
 
 function calculateClosingStock(data) {
@@ -616,7 +581,7 @@ function renderClosingStockTable(shop, date, openingStock, shopData, saved, edit
         const transfersOut = shopData ? calculateTransfersOut(shopData, product.id) : 0;
         const creditorReleases = shopData ? calculateCreditorReleases(shopData, product.id) : 0;
         const closing = opening + restocking - sold - transfersOut - creditorReleases;
-        const salesTotal = shopData ? calculateSalesRevenueByProduct(shopData, product.id) : 0;
+        const salesTotal = sold * product.sales;
 
         totalClosing += closing;
         totalSales += salesTotal;
@@ -743,30 +708,11 @@ function renderRecordedTransactions(shopData, shop, date) {
                 const product = productsData.find(p => p.id === val.feedType);
                 const productName = product ? product.name : val.feedType;
                 
-                let transactionDetails;
-                if (val.items && Array.isArray(val.items)) {
-                    // New multi-feed format — render items list
-                    const itemsList = val.items.map(item => {
-                        const p = productsData.find(pr => pr.id === item.feedType);
-                        return `${p ? p.name : item.feedType}: ${item.bags} bags (KSh ${item.totalPrice.toLocaleString()})`;
-                    }).join(' | ');
-                    
-                    const otherFields = Object.entries(val).map(([k, v]) => {
-                        if (['timestamp', 'items', 'subtotal', 'discount', 'total'].includes(k)) return '';
-                        return `${k}: ${v}`;
-                    }).filter(Boolean).join(', ');
-                    
-                    transactionDetails = `${otherFields ? otherFields + ' — ' : ''}${itemsList}` +
-                        (val.discount > 0 ? ` | Discount: KSh ${val.discount.toLocaleString()}` : '') +
-                        ` | Total: KSh ${val.total.toLocaleString()}`;
-                } else {
-                    // Old single-feed format
-                    transactionDetails = Object.entries(val).map(([k, v]) => {
-                        if (k === 'timestamp') return '';
-                        if (k === 'feedType') return `${k}: ${productName}`;
-                        return `${k}: ${v}`;
-                    }).filter(Boolean).join(', ');
-                }
+                const transactionDetails = Object.entries(val).map(([k, v]) => {
+                    if (k === 'timestamp') return ''; // Skip timestamp display
+                    if (k === 'feedType') return `${k}: ${productName}`;
+                    return `${k}: ${v}`;
+                }).filter(Boolean).join(', ');
                 
                 const deleteBtn = canDelete ? 
                     `<button onclick="deleteTransaction('${shop}', '${date}', '${section.collection}', '${key}')" 
@@ -1058,17 +1004,7 @@ function showTransactionForm(formId, shop) {
             };
             
             document.getElementById('form-discount').oninput = () => {
-                const discount = parseFloat(document.getElementById('form-discount').value || 0);
-                let subtotal = 0;
-                feedItems.forEach(item => {
-                    if (item.feedType && item.bags) {
-                        const product = productsData.find(p => p.id === item.feedType);
-                        if (product) subtotal += product.sales * parseFloat(item.bags);
-                    }
-                });
-                const total = subtotal - discount;
-                const totalEl = document.querySelector('#transaction-form .btn-save')?.closest('.form-box')?.querySelector('strong:last-of-type');
-                if (totalEl) totalEl.textContent = `KSh ${total.toLocaleString()}`;
+                renderSaleForm();
             };
             
             document.getElementById('transaction-form').onsubmit = async (e) => {
@@ -1301,17 +1237,7 @@ function showTransactionForm(formId, shop) {
             };
             
             document.getElementById('form-discount').oninput = () => {
-                const discount = parseFloat(document.getElementById('form-discount').value || 0);
-                let subtotal = 0;
-                feedItems.forEach(item => {
-                    if (item.feedType && item.bags) {
-                        const product = productsData.find(p => p.id === item.feedType);
-                        if (product) subtotal += product.sales * parseFloat(item.bags);
-                    }
-                });
-                const total = subtotal - discount;
-                const totalEl = document.querySelector('#transaction-form .btn-save')?.closest('.form-box')?.querySelector('strong:last-of-type');
-                if (totalEl) totalEl.textContent = `KSh ${total.toLocaleString()}`;
+                renderCreditSaleForm();
             };
             
             document.getElementById('transaction-form').onsubmit = async (e) => {
@@ -1549,17 +1475,7 @@ async function loadCreditorsForRelease(shop) {
         };
         
         document.getElementById('form-discount').oninput = () => {
-            const discount = parseFloat(document.getElementById('form-discount').value || 0);
-            let subtotal = 0;
-            feedItems.forEach(item => {
-                if (item.feedType && item.bags) {
-                    const product = productsData.find(p => p.id === item.feedType);
-                    if (product) subtotal += product.sales * parseFloat(item.bags);
-                }
-            });
-            const total = subtotal - discount;
-            const totalEl = document.querySelector('#transaction-form .btn-save')?.closest('.form-box')?.querySelector('strong:last-of-type');
-            if (totalEl) totalEl.textContent = `KSh ${total.toLocaleString()}`;
+            renderCreditorReleaseForm();
         };
         
         document.getElementById('transaction-form').onsubmit = async (e) => {
@@ -1680,7 +1596,7 @@ async function loadTotalSalesData(date) {
             productsData.forEach(product => {
                 const sold = calculateSold(data, product.id);
                 bagsSold += sold;
-                salesAmount += calculateSalesRevenueByProduct(data, product.id);
+                salesAmount += sold * product.sales;
             });
 
             totalBagsRemaining += bagsRemaining;
@@ -1737,9 +1653,7 @@ async function loadDebtorsView() {
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
-                    const amount = sale.total != null
-                        ? parseFloat(sale.total)
-                        : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
 
                     // Track debtor balance
                     if (!debtorBalances[sale.debtorName]) {
@@ -1965,18 +1879,9 @@ async function loadCreditorsView() {
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    let bags, amount;
-                    
-                    if (release.items && Array.isArray(release.items)) {
-                        // New multi-feed format
-                        bags = release.items.reduce((sum, item) => sum + parseFloat(item.bags || 0), 0);
-                        amount = parseFloat(release.total || 0);
-                    } else {
-                        // Old single-feed format
-                        bags = parseFloat(release.bags);
-                        const product = productsData.find(p => p.id === release.feedType);
-                        amount = product ? bags * product.sales : 0;
-                    }
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    const amount = product ? bags * product.sales : 0;
                     
                     if (creditorBalances[creditorName]) {
                         creditorBalances[creditorName].feedsTaken += bags;
@@ -2015,10 +1920,11 @@ async function loadCreditorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
+        <td></td>
         <td colspan="2" style="font-weight: bold;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold;">${totalFeedsTaken.toFixed(1)} bags</td>
-        <td style="text-align: right; font-weight: bold;">KSh ${totalFeedsAmount.toLocaleString()}</td>
-        <td style="text-align: right; font-weight: bold; color: ${totalBalance > 0 ? '#2e7d32' : '#d32f2f'}; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #d32f2f; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
     `;
 
     // Store total creditor balance globally for Stock Value calculation
@@ -2069,9 +1975,7 @@ async function loadStockValueData(date) {
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
-                    const amount = sale.total != null
-                        ? parseFloat(sale.total)
-                        : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
                     
                     if (!debtorBalances[sale.debtorName]) {
                         debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
@@ -2144,19 +2048,13 @@ async function loadStockValueData(date) {
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    let amount;
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
                     
-                    if (release.items && Array.isArray(release.items)) {
-                        // New multi-feed format
-                        amount = parseFloat(release.total || 0);
-                    } else {
-                        // Old single-feed format
-                        const bags = parseFloat(release.bags);
-                        const product = productsData.find(p => p.id === release.feedType);
-                        const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                        const discount = parseFloat(release.discount || 0);
-                        amount = (bags * price) - discount;
-                    }
+                    // Use price from transaction if available, otherwise use product selling price
+                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                    const discount = parseFloat(release.discount || 0);
+                    const amount = (bags * price) - discount; // SELLING PRICE with discount
                     
                     if (creditorBalances[creditorName]) {
                         creditorBalances[creditorName].feedsTaken += amount;
@@ -2275,36 +2173,19 @@ async function loadAllClientsView() {
                     const data = shopDoc.data();
                     if (data.regularSales) {
                         Object.values(data.regularSales).forEach(sale => {
-                            if (sale.items && Array.isArray(sale.items)) {
-                                // New multi-feed format — one row per item
-                                sale.items.forEach(item => {
-                                    const product = productsData.find(p => p.id === item.feedType);
-                                    const row = tbody.insertRow();
-                                    row.innerHTML = `
-                                        <td>${sale.clientName}</td>
-                                        <td>${sale.phoneNumber || 'Not Provided'}</td>
-                                        <td>${product ? product.name : item.feedType}</td>
-                                        <td style="text-align: right;">${parseFloat(item.bags).toFixed(1)}</td>
-                                        <td style="text-align: right; font-weight: bold;">KSh ${item.totalPrice.toLocaleString()}</td>
-                                        <td>${shop}</td>
-                                        <td>${formatDateDisplay(selectedDate)}</td>
-                                    `;
-                                });
-                            } else {
-                                // Old single-feed format
-                                const product = productsData.find(p => p.id === sale.feedType);
-                                const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-                                const row = tbody.insertRow();
-                                row.innerHTML = `
-                                    <td>${sale.clientName}</td>
-                                    <td>${sale.phoneNumber || 'Not Provided'}</td>
-                                    <td>${product ? product.name : sale.feedType}</td>
-                                    <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
-                                    <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
-                                    <td>${shop}</td>
-                                    <td>${formatDateDisplay(selectedDate)}</td>
-                                `;
-                            }
+                            const product = productsData.find(p => p.id === sale.feedType);
+                            const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                            
+                            const row = tbody.insertRow();
+                            row.innerHTML = `
+                                <td>${sale.clientName}</td>
+                                <td>${sale.phoneNumber || 'Not Provided'}</td>
+                                <td>${product ? product.name : sale.feedType}</td>
+                                <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
+                                <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
+                                <td>${shop}</td>
+                                <td>${formatDateDisplay(selectedDate)}</td>
+                            `;
                         });
                     }
                 }
@@ -2380,8 +2261,8 @@ async function loadAnalyticsData(days) {
                 // Calculate sales
                 productsData.forEach(product => {
                     const sold = calculateSold(data, product.id);
-                    const revenue = calculateSalesRevenueByProduct(data, product.id);
-                    const profit = revenue - (sold * product.cost);
+                    const revenue = sold * product.sales;
+                    const profit = sold * (product.sales - product.cost);
                     
                     salesByDate[dateStr] += revenue;
                     salesByShop[shop] += revenue;
@@ -2396,9 +2277,7 @@ async function loadAnalyticsData(days) {
                 // Collect debtors data
                 if (data.creditSales) {
                     Object.values(data.creditSales).forEach(sale => {
-                        const amount = sale.total != null
-                            ? parseFloat(sale.total)
-                            : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                        const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
                         const daysOutstanding = Math.floor((new Date() - docDate) / (1000 * 60 * 60 * 24));
                         
                         totalDebts += amount;
@@ -3253,6 +3132,688 @@ function renderReorderRecommendations(lowStockItems) {
         row.innerHTML = '<td colspan="6" style="text-align: center; color: #2e7d32; padding: 30px;">No reorder recommendations at this time</td>';
     }
 }
+
+// ============================================================
+//  MESSAGING SYSTEM
+// ============================================================
+
+/* ── helpers ── */
+function getInitials(name) {
+    if (!name) return '?';
+    return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function roleLabel(role) {
+    if (role === 'manager_full') return 'Manager (Full)';
+    if (role === 'manager_view') return 'Manager (View)';
+    if (role === 'attendant')    return 'Attendant';
+    return role || '—';
+}
+
+function formatChatTime(ts) {
+    if (!ts) return '';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    // yesterday
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatMsgTime(ts) {
+    if (!ts) return '';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatFullDateTime(ts) {
+    if (!ts) return '';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/* Build a deterministic chatId for a 1-on-1 from two uids */
+function buildChatId(uid1, uid2) {
+    return [uid1, uid2].sort().join('__');
+}
+
+/* ── init — called once on login ── */
+function initMessaging() {
+    // Show "All Messages" tab only for manager_full
+    const allTab = document.getElementById('all-messages-tab');
+    if (currentUserData.role === 'manager_full') {
+        allTab.style.display = '';
+    }
+
+    // Tab switching
+    document.querySelectorAll('.msg-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.msg-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            const target = tab.dataset.tab;
+            document.getElementById('chats-panel').style.display = target === 'chats' ? 'block' : 'none';
+            document.getElementById('chats-panel').classList.toggle('active', target === 'chats');
+            document.getElementById('all-messages-panel').style.display = target === 'all-messages' ? 'block' : 'none';
+            document.getElementById('all-messages-panel').classList.toggle('active', target === 'all-messages');
+            // hide active chat if open
+            document.getElementById('active-chat-panel').style.display = 'none';
+            if (target === 'all-messages') loadAllMessages();
+        });
+    });
+
+    // Compose button
+    document.getElementById('compose-message-btn').addEventListener('click', openNewMessageModal);
+
+    // Close modals
+    document.getElementById('new-msg-modal-close').addEventListener('click', closeNewMessageModal);
+    document.getElementById('edit-msg-modal-close').addEventListener('click', closeEditModal);
+    document.getElementById('new-message-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeNewMessageModal();
+    });
+    document.getElementById('edit-message-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeEditModal();
+    });
+
+    // Send new message
+    document.getElementById('new-msg-send-btn').addEventListener('click', sendNewMessage);
+
+    // Edit save
+    document.getElementById('edit-msg-save-btn').addEventListener('click', saveEdit);
+
+    // Hard-delete all cleared (soft-deleted) messages
+    document.getElementById('hard-delete-cleared-btn').addEventListener('click', hardDeleteAllCleared);
+
+    // Start real-time chat-list listener + badge
+    startChatListListener();
+}
+
+/* ── real-time chat list + badge ── */
+function startChatListListener() {
+    if (unsubChatList) unsubChatList();
+
+    const q = query(
+        collection(db, 'chats'),
+        where('participants', 'array-contains', currentUser.uid),
+        orderBy('lastMessageTime', 'desc')
+    );
+
+    unsubChatList = onSnapshot(q, (snapshot) => {
+        const chats = [];
+        snapshot.forEach(d => chats.push({ id: d.id, ...d.data() }));
+        renderChatList(chats);
+        updateUnreadBadge(chats);
+    });
+}
+
+/* ── render the left-hand chat list ── */
+async function renderChatList(chats) {
+    const container = document.getElementById('chat-list');
+    if (chats.length === 0) {
+        container.innerHTML = `
+            <div class="chat-empty-state">
+                <div class="chat-empty-icon">💬</div>
+                <p>No conversations yet.<br>Tap <strong>New</strong> to start one.</p>
+            </div>`;
+        return;
+    }
+
+    // Ensure allUsersCache is populated
+    if (allUsersCache.length === 0) await fetchAllUsers();
+
+    let html = '';
+    for (const chat of chats) {
+        const otherUid = chat.participants.find(u => u !== currentUser.uid) || chat.participants[0];
+        const otherUser = allUsersCache.find(u => u.uid === otherUid);
+        const name = otherUser ? otherUser.name : 'Unknown';
+        const sub  = otherUser ? roleLabel(otherUser.role) + (otherUser.shop ? ' – ' + otherUser.shop : '') : '';
+        const initials = getInitials(name);
+
+        const lastMsg = chat.lastMessage || '';
+        const isUnread = chat.unreadBy && chat.unreadBy[currentUser.uid];
+        const unreadCount = isUnread ? (chat.unreadCount || 1) : 0;
+        const timeStr = formatChatTime(chat.lastMessageTime);
+
+        html += `
+        <div class="chat-list-item ${isUnread ? 'unread' : ''}" data-chat-id="${chat.id}" data-other-uid="${otherUid}">
+            <div class="chat-list-avatar">${initials}</div>
+            <div class="chat-list-text">
+                <div class="chat-list-name">${name}</div>
+                <div class="chat-list-preview">${lastMsg.slice(0, 60)}</div>
+            </div>
+            <div class="chat-list-right">
+                <span class="chat-list-time">${timeStr}</span>
+                ${unreadCount > 0 ? `<span class="chat-list-unread-count">${unreadCount}</span>` : ''}
+            </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+
+    // Attach click handlers
+    container.querySelectorAll('.chat-list-item').forEach(item => {
+        item.addEventListener('click', () => {
+            openChat(item.dataset.chatId, item.dataset.otherUid);
+        });
+    });
+}
+
+/* ── badge ── */
+function updateUnreadBadge(chats) {
+    let total = 0;
+    chats.forEach(c => {
+        if (c.unreadBy && c.unreadBy[currentUser.uid]) total += (c.unreadCount || 1);
+    });
+    const badge = document.getElementById('unread-badge');
+    if (total > 0) {
+        badge.style.display = 'flex';
+        badge.textContent = total > 99 ? '99+' : total;
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+/* ── fetch & cache all users ── */
+async function fetchAllUsers() {
+    const snap = await getDocs(collection(db, 'users'));
+    allUsersCache = [];
+    snap.forEach(d => allUsersCache.push({ uid: d.id, ...d.data() }));
+}
+
+/* ── open an active chat ── */
+async function openChat(chatId, otherUid) {
+    activeChatId = chatId;
+
+    if (allUsersCache.length === 0) await fetchAllUsers();
+    const otherUser = allUsersCache.find(u => u.uid === otherUid) || { name: 'Unknown', role: '', shop: '' };
+    activeChatMeta = { otherUid, otherUser };
+
+    // update header
+    document.getElementById('chat-header-avatar').textContent = getInitials(otherUser.name);
+    document.getElementById('chat-header-name').textContent = otherUser.name;
+    document.getElementById('chat-header-sub').textContent =
+        roleLabel(otherUser.role) + (otherUser.shop ? ' – ' + otherUser.shop : '');
+
+    // show active panel
+    document.getElementById('active-chat-panel').style.display = 'flex';
+
+    // mark read — clear unread for current user
+    const chatRef = doc(db, 'chats', chatId);
+    const chatDoc = await getDoc(chatRef);
+    if (chatDoc.exists()) {
+        const data = chatDoc.data();
+        const unreadBy = data.unreadBy || {};
+        if (unreadBy[currentUser.uid]) {
+            delete unreadBy[currentUser.uid];
+            await updateDoc(chatRef, { unreadBy, unreadCount: 0 });
+        }
+    }
+
+    // listen to messages in this chat
+    startActiveChatListener();
+
+    // focus input
+    setTimeout(() => document.getElementById('chat-input').focus(), 200);
+}
+
+function startActiveChatListener() {
+    if (unsubActiveChat) unsubActiveChat();
+
+    const q = query(
+        collection(db, 'chats', activeChatId, 'messages'),
+        orderBy('createdAt', 'asc')
+    );
+
+    unsubActiveChat = onSnapshot(q, (snapshot) => {
+        const msgs = [];
+        snapshot.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+        renderMessages(msgs);
+    });
+}
+
+/* ── render messages in active chat ── */
+function renderMessages(msgs) {
+    const container = document.getElementById('chat-messages');
+    let html = '';
+    let lastDateStr = '';
+
+    msgs.forEach(msg => {
+        // skip hard-deleted
+        if (msg.hardDeleted) return;
+
+        const isMine = msg.senderId === currentUser.uid;
+        const isSoftDeleted = msg.softDeleted;
+
+        // date divider
+        if (msg.createdAt) {
+            const d = msg.createdAt.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt);
+            const dateStr = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+            if (dateStr !== lastDateStr) {
+                html += `<div class="msg-date-divider">${dateStr}</div>`;
+                lastDateStr = dateStr;
+            }
+        }
+
+        if (isSoftDeleted) {
+            html += `
+            <div class="msg-bubble-wrap ${isMine ? 'mine' : 'theirs'}">
+                <div class="msg-bubble deleted">This message was deleted.</div>
+            </div>`;
+            return;
+        }
+
+        // action buttons — only sender can edit/delete own messages
+        let actionsHtml = '';
+        if (isMine) {
+            actionsHtml = `
+                <div class="msg-actions">
+                    <button class="msg-action-btn" data-msg-id="${msg.id}" onclick="openEditModal('${msg.id}', \`${msg.text.replace(/`/g, '\\`').replace(/\n/g, '\\n')}\`)">✏️ Edit</button>
+                    <button class="msg-action-btn delete" data-msg-id="${msg.id}" onclick="softDeleteMessage('${msg.id}')">🗑️</button>
+                </div>`;
+        }
+
+        const timeStr = formatMsgTime(msg.createdAt);
+        const editedTag = msg.editedAt ? '<span class="msg-edited-tag"> (edited)</span>' : '';
+
+        html += `
+        <div class="msg-bubble-wrap ${isMine ? 'mine' : 'theirs'}">
+            <div class="msg-bubble">
+                ${actionsHtml}
+                ${msg.text.replace(/\n/g, '<br>')}
+            </div>
+            <div class="msg-bubble-footer">
+                <span class="msg-time">${timeStr}</span>
+                ${editedTag}
+            </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+    // scroll to bottom
+    container.scrollTop = container.scrollHeight;
+}
+
+/* ── back button ── */
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'chat-back-btn') {
+        document.getElementById('active-chat-panel').style.display = 'none';
+        if (unsubActiveChat) { unsubActiveChat(); unsubActiveChat = null; }
+        activeChatId = null;
+        activeChatMeta = null;
+    }
+});
+
+/* ── send message in active chat ── */
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'chat-send-btn') sendActiveMessage();
+});
+document.addEventListener('keydown', (e) => {
+    if (e.target.id === 'chat-input' && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendActiveMessage();
+    }
+});
+
+async function sendActiveMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text || !activeChatId) return;
+    input.value = '';
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+
+    const chatRef = doc(db, 'chats', activeChatId);
+
+    // add message
+    await addDoc(collection(db, 'chats', activeChatId, 'messages'), {
+        senderId: currentUser.uid,
+        senderName: currentUserData.name,
+        text,
+        createdAt: serverTimestamp(),
+        softDeleted: false,
+        hardDeleted: false
+    });
+
+    // update chat meta + unread for the other person
+    const otherUid = activeChatMeta.otherUid;
+    const unreadBy = {};
+    unreadBy[otherUid] = true;
+    await updateDoc(chatRef, {
+        lastMessage: text,
+        lastMessageTime: serverTimestamp(),
+        lastSender: currentUserData.name,
+        unreadBy,
+        unreadCount: 1
+    });
+}
+
+/* ── auto-resize textarea ── */
+document.addEventListener('input', (e) => {
+    if (e.target.id === 'chat-input') {
+        e.target.style.height = 'auto';
+        e.target.style.height = e.target.scrollHeight + 'px';
+    }
+});
+
+/* ============================================================
+   NEW MESSAGE MODAL — compose to any user(s)
+   ============================================================ */
+let newMsgRecipients = []; // array of { uid, name, role, shop }
+
+async function openNewMessageModal() {
+    if (allUsersCache.length === 0) await fetchAllUsers();
+    newMsgRecipients = [];
+    document.getElementById('new-msg-chips').innerHTML = '';
+    document.getElementById('new-msg-search').value = '';
+    document.getElementById('new-msg-body').value = '';
+    document.getElementById('new-msg-dropdown').style.display = 'none';
+    document.getElementById('new-message-modal').style.display = 'flex';
+    setTimeout(() => document.getElementById('new-msg-search').focus(), 150);
+}
+function closeNewMessageModal() {
+    document.getElementById('new-message-modal').style.display = 'none';
+    document.getElementById('new-msg-dropdown').style.display = 'none';
+}
+
+/* search filtering */
+document.addEventListener('input', (e) => {
+    if (e.target.id !== 'new-msg-search') return;
+    const val = e.target.value.trim().toLowerCase();
+    const dropdown = document.getElementById('new-msg-dropdown');
+    if (!val) { dropdown.style.display = 'none'; return; }
+
+    const alreadyAdded = new Set(newMsgRecipients.map(r => r.uid));
+    // exclude self
+    alreadyAdded.add(currentUser.uid);
+
+    const filtered = allUsersCache.filter(u => {
+        if (alreadyAdded.has(u.uid)) return false;
+        if (u.status === 'pending') return false;
+        const nameMatch   = (u.name || '').toLowerCase().includes(val);
+        const roleMatch   = (u.role || '').toLowerCase().includes(val);
+        const shopMatch   = (u.shop || '').toLowerCase().includes(val);
+        return nameMatch || roleMatch || shopMatch;
+    });
+
+    if (filtered.length === 0) {
+        dropdown.style.display = 'none';
+        return;
+    }
+
+    dropdown.innerHTML = filtered.map(u => `
+        <div class="new-msg-dropdown-item" data-uid="${u.uid}">
+            <div class="new-msg-dd-avatar">${getInitials(u.name)}</div>
+            <div class="new-msg-dd-info">
+                <div class="new-msg-dd-name">${u.name}</div>
+                <div class="new-msg-dd-role">${roleLabel(u.role)}${u.shop ? ' – ' + u.shop : ''}</div>
+            </div>
+        </div>
+    `).join('');
+    dropdown.style.display = 'block';
+});
+
+/* click a dropdown item to add recipient */
+document.addEventListener('click', (e) => {
+    const item = e.target.closest('.new-msg-dropdown-item');
+    if (!item) return;
+    const uid = item.dataset.uid;
+    const user = allUsersCache.find(u => u.uid === uid);
+    if (!user || newMsgRecipients.find(r => r.uid === uid)) return;
+
+    newMsgRecipients.push({ uid: user.uid, name: user.name, role: user.role, shop: user.shop });
+    renderChips();
+    document.getElementById('new-msg-search').value = '';
+    document.getElementById('new-msg-dropdown').style.display = 'none';
+});
+
+function renderChips() {
+    const container = document.getElementById('new-msg-chips');
+    container.innerHTML = newMsgRecipients.map((r, i) => `
+        <span class="new-msg-chip">
+            ${r.name}
+            <span class="chip-remove" data-index="${i}">✕</span>
+        </span>
+    `).join('');
+
+    container.querySelectorAll('.chip-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            newMsgRecipients.splice(parseInt(btn.dataset.index), 1);
+            renderChips();
+        });
+    });
+}
+
+/* send new message — creates chat docs if needed */
+async function sendNewMessage() {
+    const text = document.getElementById('new-msg-body').value.trim();
+    if (!text) { showToast('Please type a message.', 'error'); return; }
+    if (newMsgRecipients.length === 0) { showToast('Please add at least one recipient.', 'error'); return; }
+
+    closeNewMessageModal();
+
+    // For now: send to each recipient as a 1-on-1 chat (WhatsApp-style)
+    for (const recipient of newMsgRecipients) {
+        const chatId = buildChatId(currentUser.uid, recipient.uid);
+        const chatRef = doc(db, 'chats', chatId);
+
+        // ensure chat doc exists
+        const chatDoc = await getDoc(chatRef);
+        if (!chatDoc.exists()) {
+            await setDoc(chatRef, {
+                participants: [currentUser.uid, recipient.uid],
+                lastMessage: '',
+                lastMessageTime: serverTimestamp(),
+                lastSender: '',
+                createdAt: serverTimestamp(),
+                unreadBy: {},
+                unreadCount: 0
+            });
+        }
+
+        // add message
+        await addDoc(collection(db, 'chats', chatId, 'messages'), {
+            senderId: currentUser.uid,
+            senderName: currentUserData.name,
+            text,
+            createdAt: serverTimestamp(),
+            softDeleted: false,
+            hardDeleted: false
+        });
+
+        // update chat meta + mark unread for recipient
+        const unreadBy = {};
+        unreadBy[recipient.uid] = true;
+        await updateDoc(chatRef, {
+            lastMessage: text,
+            lastMessageTime: serverTimestamp(),
+            lastSender: currentUserData.name,
+            unreadBy,
+            unreadCount: 1
+        });
+    }
+
+    showToast('Message sent!', 'success');
+}
+
+/* ============================================================
+   EDIT & DELETE
+   ============================================================ */
+let editingMsgId = null;
+
+window.openEditModal = function(msgId, currentText) {
+    editingMsgId = msgId;
+    document.getElementById('edit-msg-body').value = currentText;
+    document.getElementById('edit-message-modal').style.display = 'flex';
+    setTimeout(() => document.getElementById('edit-msg-body').focus(), 150);
+};
+
+function closeEditModal() {
+    document.getElementById('edit-message-modal').style.display = 'none';
+    editingMsgId = null;
+}
+
+async function saveEdit() {
+    if (!editingMsgId || !activeChatId) return;
+    const newText = document.getElementById('edit-msg-body').value.trim();
+    if (!newText) { showToast('Message cannot be empty.', 'error'); return; }
+
+    await updateDoc(doc(db, 'chats', activeChatId, 'messages', editingMsgId), {
+        text: newText,
+        editedAt: serverTimestamp()
+    });
+
+    // also update lastMessage on chat if this was the latest
+    const chatDoc = await getDoc(doc(db, 'chats', activeChatId));
+    if (chatDoc.exists() && chatDoc.data().lastMessage) {
+        // just update if it matches roughly — simplification
+        await updateDoc(doc(db, 'chats', activeChatId), { lastMessage: newText });
+    }
+
+    closeEditModal();
+    showToast('Message updated.', 'success');
+}
+
+window.softDeleteMessage = async function(msgId) {
+    if (!activeChatId) return;
+    if (!confirm('Delete this message?')) return;
+
+    await updateDoc(doc(db, 'chats', activeChatId, 'messages', msgId), {
+        softDeleted: true
+    });
+
+    // if it was the last message, update preview
+    const chatDoc = await getDoc(doc(db, 'chats', activeChatId));
+    if (chatDoc.exists()) {
+        // fetch latest non-deleted message to update preview
+        const q = query(
+            collection(db, 'chats', activeChatId, 'messages'),
+            where('softDeleted', '!=', true),
+            orderBy('createdAt', 'desc'),
+            limit(1)
+        );
+        const snap = await getDocs(q);
+        let preview = '';
+        snap.forEach(d => { preview = d.data().text || ''; });
+        await updateDoc(doc(db, 'chats', activeChatId), { lastMessage: preview });
+    }
+
+    showToast('Message deleted.', 'success');
+};
+
+/* ============================================================
+   ALL MESSAGES — admin view (manager_full only)
+   ============================================================ */
+async function loadAllMessages() {
+    const container = document.getElementById('all-messages-list');
+    container.innerHTML = '<div style="text-align:center;padding:30px;color:#999;">Loading…</div>';
+
+    if (allUsersCache.length === 0) await fetchAllUsers();
+
+    // Fetch ALL chats (no filter — manager sees everything)
+    const chatsSnap = await getDocs(query(collection(db, 'chats'), orderBy('lastMessageTime', 'desc')));
+
+    let allMsgs = []; // { chatId, ...msgData }
+
+    for (const chatDoc of chatsSnap.docs) {
+        const msgsSnap = await getDocs(
+            query(collection(db, 'chats', chatDoc.id, 'messages'), orderBy('createdAt', 'desc'), limit(50))
+        );
+        msgsSnap.forEach(m => {
+            allMsgs.push({ chatId: chatDoc.id, msgId: m.id, ...m.data() });
+        });
+    }
+
+    // sort all by createdAt desc
+    allMsgs.sort((a, b) => {
+        const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return tb - ta;
+    });
+
+    // filter out hardDeleted
+    allMsgs = allMsgs.filter(m => !m.hardDeleted);
+
+    if (allMsgs.length === 0) {
+        container.innerHTML = `
+            <div class="chat-empty-state">
+                <div class="chat-empty-icon">📋</div>
+                <p>No messages across the system yet.</p>
+            </div>`;
+        return;
+    }
+
+    // check if any soft-deleted exist → show hard-delete-all button
+    const hasSoftDeleted = allMsgs.some(m => m.softDeleted);
+    document.getElementById('hard-delete-cleared-btn').style.display = hasSoftDeleted ? 'inline-flex' : 'none';
+
+    let html = '';
+    allMsgs.forEach(msg => {
+        const sender = allUsersCache.find(u => u.uid === msg.senderId);
+        const senderName = sender ? sender.name : 'Unknown';
+        const senderRole = sender ? roleLabel(sender.role) : '';
+        const senderShop = sender ? (sender.shop || '') : '';
+
+        // find recipients (the other participant in that chat)
+        // we stored participants in chat doc — we'll approximate from chatId
+        const parts = msg.chatId.split('__');
+        const otherUid = parts.find(p => p !== msg.senderId) || parts[0];
+        const otherUser = allUsersCache.find(u => u.uid === otherUid);
+        const recipientName = otherUser ? otherUser.name : 'Unknown';
+
+        const timeStr = formatFullDateTime(msg.createdAt);
+        const isSoftDeleted = msg.softDeleted;
+
+        html += `
+        <div class="all-msg-card ${isSoftDeleted ? 'soft-deleted' : ''}" data-chat-id="${msg.chatId}" data-msg-id="${msg.msgId}">
+            <div class="all-msg-card-header">
+                <span class="all-msg-sender">
+                    ${senderName}
+                    <span class="all-msg-role-badge">${senderRole}${senderShop ? ' – ' + senderShop : ''}</span>
+                </span>
+                <span class="all-msg-meta">${timeStr}${isSoftDeleted ? ' · <span style="color:#d32f2f;font-weight:600;">Deleted</span>' : ''}</span>
+            </div>
+            <div class="all-msg-text">${isSoftDeleted ? 'This message was deleted.' : msg.text.replace(/\n/g, '<br>')}</div>
+            <div class="all-msg-recipients">→ To: ${recipientName}</div>
+            ${isSoftDeleted ? `<button class="all-msg-hard-delete-btn" data-chat-id="${msg.chatId}" data-msg-id="${msg.msgId}">🗑️ Hard Delete</button>` : ''}
+        </div>`;
+    });
+
+    container.innerHTML = html;
+
+    // hard delete individual
+    container.querySelectorAll('.all-msg-hard-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('Permanently delete this message? This cannot be undone.')) return;
+            await updateDoc(doc(db, 'chats', btn.dataset.chatId, 'messages', btn.dataset.msgId), { hardDeleted: true });
+            showToast('Message permanently deleted.', 'success');
+            loadAllMessages(); // refresh
+        });
+    });
+}
+
+/* hard-delete ALL soft-deleted messages across the system */
+async function hardDeleteAllCleared() {
+    if (!confirm('Permanently delete ALL soft-deleted messages? This cannot be undone.')) return;
+
+    const chatsSnap = await getDocs(collection(db, 'chats'));
+    let count = 0;
+    for (const chatDoc of chatsSnap.docs) {
+        const msgsSnap = await getDocs(
+            query(collection(db, 'chats', chatDoc.id, 'messages'), where('softDeleted', '==', true))
+        );
+        for (const m of msgsSnap.docs) {
+            await updateDoc(doc(db, 'chats', chatDoc.id, 'messages', m.id), { hardDeleted: true });
+            count++;
+        }
+    }
+    showToast(`Hard-deleted ${count} message(s).`, 'success');
+    loadAllMessages();
+}
+
+// ── end messaging ──
+
 async function loadAdminPanel() {
     showView('admin-view');
     const container = document.getElementById('admin-users');
@@ -3691,9 +4252,8 @@ for (const shop of SHOPS) {
         
         if (data.creditSales) {
             Object.values(data.creditSales).forEach(sale => {
-                const amount = sale.total != null
-                    ? parseFloat(sale.total)
-                    : (parseFloat(sale.bags) * parseFloat(sale.price)) -
+                const amount =
+                    (parseFloat(sale.bags) * parseFloat(sale.price)) -
                     parseFloat(sale.discount || 0);
 
                 if (!debtorBalancesPDF[sale.debtorName]) {
@@ -3905,20 +4465,11 @@ pdf.autoTable({
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    let bags, amount;
-                    
-                    if (release.items && Array.isArray(release.items)) {
-                        // New multi-feed format
-                        bags = release.items.reduce((sum, item) => sum + parseFloat(item.bags || 0), 0);
-                        amount = parseFloat(release.total || 0);
-                    } else {
-                        // Old single-feed format
-                        bags = parseFloat(release.bags);
-                        const product = productsData.find(p => p.id === release.feedType);
-                        const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                        const discount = parseFloat(release.discount || 0);
-                        amount = (bags * price) - discount;
-                    }
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                    const discount = parseFloat(release.discount || 0);
+                    const amount = (bags * price) - discount;
                     
                     if (creditorBalancesPDF[creditorName]) {
                         creditorBalancesPDF[creditorName].feedsTaken += bags;
@@ -4032,9 +4583,7 @@ pdf.autoTable({
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
-                    const amount = sale.total != null
-                        ? parseFloat(sale.total)
-                        : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
                     
                     if (!debtorBalances[sale.debtorName]) {
                         debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
@@ -4112,19 +4661,11 @@ pdf.autoTable({
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    let amount;
-                    
-                    if (release.items && Array.isArray(release.items)) {
-                        // New multi-feed format
-                        amount = parseFloat(release.total || 0);
-                    } else {
-                        // Old single-feed format
-                        const bags = parseFloat(release.bags);
-                        const product = productsData.find(p => p.id === release.feedType);
-                        const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                        const discount = parseFloat(release.discount || 0);
-                        amount = (bags * price) - discount;
-                    }
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                    const discount = parseFloat(release.discount || 0);
+                    const amount = (bags * price) - discount;
                     
                     if (creditorBalancesDoc2[creditorName]) {
                         creditorBalancesDoc2[creditorName].feedsTaken += amount;

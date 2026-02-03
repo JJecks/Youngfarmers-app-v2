@@ -372,12 +372,24 @@ function calculateSold(data, productId) {
     let total = 0;
     if (data?.regularSales) {
         Object.values(data.regularSales).forEach(s => {
-            if (s.feedType === productId) total += parseFloat(s.bags || 0);
+            if (s.items && Array.isArray(s.items)) {
+                s.items.forEach(item => {
+                    if (item.feedType === productId) total += parseFloat(item.bags || 0);
+                });
+            } else if (s.feedType === productId) {
+                total += parseFloat(s.bags || 0);
+            }
         });
     }
     if (data?.creditSales) {
         Object.values(data.creditSales).forEach(s => {
-            if (s.feedType === productId) total += parseFloat(s.bags || 0);
+            if (s.items && Array.isArray(s.items)) {
+                s.items.forEach(item => {
+                    if (item.feedType === productId) total += parseFloat(item.bags || 0);
+                });
+            } else if (s.feedType === productId) {
+                total += parseFloat(s.bags || 0);
+            }
         });
     }
     return total;
@@ -397,7 +409,13 @@ function calculateCreditorReleases(data, productId) {
     let total = 0;
     if (data?.creditorReleases) {
         Object.values(data.creditorReleases).forEach(c => {
-            if (c.feedType === productId) total += parseFloat(c.bags || 0);
+            if (c.items && Array.isArray(c.items)) {
+                c.items.forEach(item => {
+                    if (item.feedType === productId) total += parseFloat(item.bags || 0);
+                });
+            } else if (c.feedType === productId) {
+                total += parseFloat(c.bags || 0);
+            }
         });
     }
     return total;
@@ -696,11 +714,30 @@ function renderRecordedTransactions(shopData, shop, date) {
                 const product = productsData.find(p => p.id === val.feedType);
                 const productName = product ? product.name : val.feedType;
                 
-                const transactionDetails = Object.entries(val).map(([k, v]) => {
-                    if (k === 'timestamp') return ''; // Skip timestamp display
-                    if (k === 'feedType') return `${k}: ${productName}`;
-                    return `${k}: ${v}`;
-                }).filter(Boolean).join(', ');
+                let transactionDetails;
+                if (val.items && Array.isArray(val.items)) {
+                    // New multi-feed format — render items list
+                    const itemsList = val.items.map(item => {
+                        const p = productsData.find(pr => pr.id === item.feedType);
+                        return `${p ? p.name : item.feedType}: ${item.bags} bags (KSh ${item.totalPrice.toLocaleString()})`;
+                    }).join(' | ');
+                    
+                    const otherFields = Object.entries(val).map(([k, v]) => {
+                        if (['timestamp', 'items', 'subtotal', 'discount', 'total'].includes(k)) return '';
+                        return `${k}: ${v}`;
+                    }).filter(Boolean).join(', ');
+                    
+                    transactionDetails = `${otherFields ? otherFields + ' — ' : ''}${itemsList}` +
+                        (val.discount > 0 ? ` | Discount: KSh ${val.discount.toLocaleString()}` : '') +
+                        ` | Total: KSh ${val.total.toLocaleString()}`;
+                } else {
+                    // Old single-feed format
+                    transactionDetails = Object.entries(val).map(([k, v]) => {
+                        if (k === 'timestamp') return '';
+                        if (k === 'feedType') return `${k}: ${productName}`;
+                        return `${k}: ${v}`;
+                    }).filter(Boolean).join(', ');
+                }
                 
                 const deleteBtn = canDelete ? 
                     `<button onclick="deleteTransaction('${shop}', '${date}', '${section.collection}', '${key}')" 
@@ -1175,7 +1212,7 @@ function showTransactionForm(formId, shop) {
                                 <input type="number" min="0" class="form-input" id="form-discount" placeholder="0" value="${discount}" style="text-align: right;">
                             </div>
                             <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #c62828;">
-                                <span style="font-size: 1.2em; font-weight: bold;">TOTAL DEBT:</span>
+                                <span style="font-size: 1.2em; font-weight: bold;">TOTAL CREDIT:</span>
                                 <strong style="font-size: 1.3em; color: #c62828;">KSh ${total.toLocaleString()}</strong>
                             </div>
                         </div>
@@ -1358,7 +1395,7 @@ async function loadCreditorsForRelease(shop) {
     loading.style.display = 'none';
     formContainer.style.display = 'block';
     
-    // Setup multi-feed form
+    // Multi-feed form for creditor releases
     let feedItems = [{ id: 1, feedType: '', bags: '', price: 0 }];
     let feedIdCounter = 2;
     
@@ -1641,7 +1678,9 @@ async function loadDebtorsView() {
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
-                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    const amount = sale.total != null
+                        ? parseFloat(sale.total)
+                        : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
 
                     // Track debtor balance
                     if (!debtorBalances[sale.debtorName]) {
@@ -1867,9 +1906,18 @@ async function loadCreditorsView() {
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    const amount = product ? bags * product.sales : 0;
+                    let bags, amount;
+                    
+                    if (release.items && Array.isArray(release.items)) {
+                        // New multi-feed format
+                        bags = release.items.reduce((sum, item) => sum + parseFloat(item.bags || 0), 0);
+                        amount = parseFloat(release.total || 0);
+                    } else {
+                        // Old single-feed format
+                        bags = parseFloat(release.bags);
+                        const product = productsData.find(p => p.id === release.feedType);
+                        amount = product ? bags * product.sales : 0;
+                    }
                     
                     if (creditorBalances[creditorName]) {
                         creditorBalances[creditorName].feedsTaken += bags;
@@ -1908,11 +1956,10 @@ async function loadCreditorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
-        <td></td>
         <td colspan="2" style="font-weight: bold;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
-        <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
-        <td style="text-align: right; font-weight: bold; color: #d32f2f; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold;">${totalFeedsTaken.toFixed(1)} bags</td>
+        <td style="text-align: right; font-weight: bold;">KSh ${totalFeedsAmount.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: ${totalBalance > 0 ? '#2e7d32' : '#d32f2f'}; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
     `;
 
     // Store total creditor balance globally for Stock Value calculation
@@ -1963,7 +2010,9 @@ async function loadStockValueData(date) {
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
-                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    const amount = sale.total != null
+                        ? parseFloat(sale.total)
+                        : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
                     
                     if (!debtorBalances[sale.debtorName]) {
                         debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
@@ -2036,13 +2085,19 @@ async function loadStockValueData(date) {
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
+                    let amount;
                     
-                    // Use price from transaction if available, otherwise use product selling price
-                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                    const discount = parseFloat(release.discount || 0);
-                    const amount = (bags * price) - discount; // SELLING PRICE with discount
+                    if (release.items && Array.isArray(release.items)) {
+                        // New multi-feed format
+                        amount = parseFloat(release.total || 0);
+                    } else {
+                        // Old single-feed format
+                        const bags = parseFloat(release.bags);
+                        const product = productsData.find(p => p.id === release.feedType);
+                        const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                        const discount = parseFloat(release.discount || 0);
+                        amount = (bags * price) - discount;
+                    }
                     
                     if (creditorBalances[creditorName]) {
                         creditorBalances[creditorName].feedsTaken += amount;
@@ -2161,19 +2216,36 @@ async function loadAllClientsView() {
                     const data = shopDoc.data();
                     if (data.regularSales) {
                         Object.values(data.regularSales).forEach(sale => {
-                            const product = productsData.find(p => p.id === sale.feedType);
-                            const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-                            
-                            const row = tbody.insertRow();
-                            row.innerHTML = `
-                                <td>${sale.clientName}</td>
-                                <td>${sale.phoneNumber || 'Not Provided'}</td>
-                                <td>${product ? product.name : sale.feedType}</td>
-                                <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
-                                <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
-                                <td>${shop}</td>
-                                <td>${formatDateDisplay(selectedDate)}</td>
-                            `;
+                            if (sale.items && Array.isArray(sale.items)) {
+                                // New multi-feed format — one row per item
+                                sale.items.forEach(item => {
+                                    const product = productsData.find(p => p.id === item.feedType);
+                                    const row = tbody.insertRow();
+                                    row.innerHTML = `
+                                        <td>${sale.clientName}</td>
+                                        <td>${sale.phoneNumber || 'Not Provided'}</td>
+                                        <td>${product ? product.name : item.feedType}</td>
+                                        <td style="text-align: right;">${parseFloat(item.bags).toFixed(1)}</td>
+                                        <td style="text-align: right; font-weight: bold;">KSh ${item.totalPrice.toLocaleString()}</td>
+                                        <td>${shop}</td>
+                                        <td>${formatDateDisplay(selectedDate)}</td>
+                                    `;
+                                });
+                            } else {
+                                // Old single-feed format
+                                const product = productsData.find(p => p.id === sale.feedType);
+                                const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                                const row = tbody.insertRow();
+                                row.innerHTML = `
+                                    <td>${sale.clientName}</td>
+                                    <td>${sale.phoneNumber || 'Not Provided'}</td>
+                                    <td>${product ? product.name : sale.feedType}</td>
+                                    <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
+                                    <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
+                                    <td>${shop}</td>
+                                    <td>${formatDateDisplay(selectedDate)}</td>
+                                `;
+                            }
                         });
                     }
                 }
@@ -2265,7 +2337,9 @@ async function loadAnalyticsData(days) {
                 // Collect debtors data
                 if (data.creditSales) {
                     Object.values(data.creditSales).forEach(sale => {
-                        const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                        const amount = sale.total != null
+                            ? parseFloat(sale.total)
+                            : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
                         const daysOutstanding = Math.floor((new Date() - docDate) / (1000 * 60 * 60 * 24));
                         
                         totalDebts += amount;
@@ -3558,8 +3632,9 @@ for (const shop of SHOPS) {
         
         if (data.creditSales) {
             Object.values(data.creditSales).forEach(sale => {
-                const amount =
-                    (parseFloat(sale.bags) * parseFloat(sale.price)) -
+                const amount = sale.total != null
+                    ? parseFloat(sale.total)
+                    : (parseFloat(sale.bags) * parseFloat(sale.price)) -
                     parseFloat(sale.discount || 0);
 
                 if (!debtorBalancesPDF[sale.debtorName]) {
@@ -3771,11 +3846,20 @@ pdf.autoTable({
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                    const discount = parseFloat(release.discount || 0);
-                    const amount = (bags * price) - discount;
+                    let bags, amount;
+                    
+                    if (release.items && Array.isArray(release.items)) {
+                        // New multi-feed format
+                        bags = release.items.reduce((sum, item) => sum + parseFloat(item.bags || 0), 0);
+                        amount = parseFloat(release.total || 0);
+                    } else {
+                        // Old single-feed format
+                        bags = parseFloat(release.bags);
+                        const product = productsData.find(p => p.id === release.feedType);
+                        const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                        const discount = parseFloat(release.discount || 0);
+                        amount = (bags * price) - discount;
+                    }
                     
                     if (creditorBalancesPDF[creditorName]) {
                         creditorBalancesPDF[creditorName].feedsTaken += bags;
@@ -3889,7 +3973,9 @@ pdf.autoTable({
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
-                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    const amount = sale.total != null
+                        ? parseFloat(sale.total)
+                        : (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
                     
                     if (!debtorBalances[sale.debtorName]) {
                         debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
@@ -3967,11 +4053,19 @@ pdf.autoTable({
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                    const discount = parseFloat(release.discount || 0);
-                    const amount = (bags * price) - discount;
+                    let amount;
+                    
+                    if (release.items && Array.isArray(release.items)) {
+                        // New multi-feed format
+                        amount = parseFloat(release.total || 0);
+                    } else {
+                        // Old single-feed format
+                        const bags = parseFloat(release.bags);
+                        const product = productsData.find(p => p.id === release.feedType);
+                        const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                        const discount = parseFloat(release.discount || 0);
+                        amount = (bags * price) - discount;
+                    }
                     
                     if (creditorBalancesDoc2[creditorName]) {
                         creditorBalancesDoc2[creditorName].feedsTaken += amount;

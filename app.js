@@ -3246,6 +3246,8 @@ function startChatListListener() {
         snapshot.forEach(d => chats.push({ id: d.id, ...d.data() }));
         renderChatList(chats);
         updateUnreadBadge(chats);
+    }, (error) => {
+        console.warn('Chat list listener error:', error.message);
     });
 }
 
@@ -3317,9 +3319,13 @@ function updateUnreadBadge(chats) {
 
 /* ── fetch & cache all users ── */
 async function fetchAllUsers() {
-    const snap = await getDocs(collection(db, 'users'));
-    allUsersCache = [];
-    snap.forEach(d => allUsersCache.push({ uid: d.id, ...d.data() }));
+    try {
+        const snap = await getDocs(collection(db, 'users'));
+        allUsersCache = [];
+        snap.forEach(d => allUsersCache.push({ uid: d.id, ...d.data() }));
+    } catch (err) {
+        console.warn('fetchAllUsers error:', err.message);
+    }
 }
 
 /* ── open an active chat ── */
@@ -3370,6 +3376,8 @@ function startActiveChatListener() {
         const msgs = [];
         snapshot.forEach(d => msgs.push({ id: d.id, ...d.data() }));
         renderMessages(msgs);
+    }, (error) => {
+        console.warn('Active chat listener error:', error.message);
     });
 }
 

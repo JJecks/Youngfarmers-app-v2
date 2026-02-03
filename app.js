@@ -421,6 +421,35 @@ function calculateCreditorReleases(data, productId) {
     return total;
 }
 
+function calculateSalesRevenueByProduct(data, productId) {
+    let revenue = 0;
+    const collections = ['regularSales', 'creditSales'];
+    collections.forEach(col => {
+        if (data?.[col]) {
+            Object.values(data[col]).forEach(sale => {
+                if (sale.items && Array.isArray(sale.items)) {
+                    // New multi-feed format — distribute discount proportionally
+                    const subtotal = sale.subtotal || sale.items.reduce((sum, i) => sum + (i.totalPrice || 0), 0);
+                    const discount = parseFloat(sale.discount || 0);
+                    sale.items.forEach(item => {
+                        if (item.feedType === productId) {
+                            const itemRevenue = subtotal > 0
+                                ? item.totalPrice - (discount * item.totalPrice / subtotal)
+                                : item.totalPrice;
+                            revenue += itemRevenue;
+                        }
+                    });
+                } else if (sale.feedType === productId) {
+                    // Old single-feed format
+                    const itemRevenue = (parseFloat(sale.bags || 0) * parseFloat(sale.price || 0)) - parseFloat(sale.discount || 0);
+                    revenue += itemRevenue;
+                }
+            });
+        }
+    });
+    return revenue;
+}
+
 function calculateClosingStock(data) {
     const closing = {};
     productsData.forEach(product => {
@@ -587,7 +616,7 @@ function renderClosingStockTable(shop, date, openingStock, shopData, saved, edit
         const transfersOut = shopData ? calculateTransfersOut(shopData, product.id) : 0;
         const creditorReleases = shopData ? calculateCreditorReleases(shopData, product.id) : 0;
         const closing = opening + restocking - sold - transfersOut - creditorReleases;
-        const salesTotal = sold * product.sales;
+        const salesTotal = shopData ? calculateSalesRevenueByProduct(shopData, product.id) : 0;
 
         totalClosing += closing;
         totalSales += salesTotal;
@@ -1029,7 +1058,17 @@ function showTransactionForm(formId, shop) {
             };
             
             document.getElementById('form-discount').oninput = () => {
-                renderSaleForm();
+                const discount = parseFloat(document.getElementById('form-discount').value || 0);
+                let subtotal = 0;
+                feedItems.forEach(item => {
+                    if (item.feedType && item.bags) {
+                        const product = productsData.find(p => p.id === item.feedType);
+                        if (product) subtotal += product.sales * parseFloat(item.bags);
+                    }
+                });
+                const total = subtotal - discount;
+                const totalEl = document.querySelector('#transaction-form .btn-save')?.closest('.form-box')?.querySelector('strong:last-of-type');
+                if (totalEl) totalEl.textContent = `KSh ${total.toLocaleString()}`;
             };
             
             document.getElementById('transaction-form').onsubmit = async (e) => {
@@ -1262,7 +1301,17 @@ function showTransactionForm(formId, shop) {
             };
             
             document.getElementById('form-discount').oninput = () => {
-                renderCreditSaleForm();
+                const discount = parseFloat(document.getElementById('form-discount').value || 0);
+                let subtotal = 0;
+                feedItems.forEach(item => {
+                    if (item.feedType && item.bags) {
+                        const product = productsData.find(p => p.id === item.feedType);
+                        if (product) subtotal += product.sales * parseFloat(item.bags);
+                    }
+                });
+                const total = subtotal - discount;
+                const totalEl = document.querySelector('#transaction-form .btn-save')?.closest('.form-box')?.querySelector('strong:last-of-type');
+                if (totalEl) totalEl.textContent = `KSh ${total.toLocaleString()}`;
             };
             
             document.getElementById('transaction-form').onsubmit = async (e) => {
@@ -1500,7 +1549,17 @@ async function loadCreditorsForRelease(shop) {
         };
         
         document.getElementById('form-discount').oninput = () => {
-            renderCreditorReleaseForm();
+            const discount = parseFloat(document.getElementById('form-discount').value || 0);
+            let subtotal = 0;
+            feedItems.forEach(item => {
+                if (item.feedType && item.bags) {
+                    const product = productsData.find(p => p.id === item.feedType);
+                    if (product) subtotal += product.sales * parseFloat(item.bags);
+                }
+            });
+            const total = subtotal - discount;
+            const totalEl = document.querySelector('#transaction-form .btn-save')?.closest('.form-box')?.querySelector('strong:last-of-type');
+            if (totalEl) totalEl.textContent = `KSh ${total.toLocaleString()}`;
         };
         
         document.getElementById('transaction-form').onsubmit = async (e) => {
@@ -1621,7 +1680,7 @@ async function loadTotalSalesData(date) {
             productsData.forEach(product => {
                 const sold = calculateSold(data, product.id);
                 bagsSold += sold;
-                salesAmount += sold * product.sales;
+                salesAmount += calculateSalesRevenueByProduct(data, product.id);
             });
 
             totalBagsRemaining += bagsRemaining;
@@ -2321,8 +2380,8 @@ async function loadAnalyticsData(days) {
                 // Calculate sales
                 productsData.forEach(product => {
                     const sold = calculateSold(data, product.id);
-                    const revenue = sold * product.sales;
-                    const profit = sold * (product.sales - product.cost);
+                    const revenue = calculateSalesRevenueByProduct(data, product.id);
+                    const profit = revenue - (sold * product.cost);
                     
                     salesByDate[dateStr] += revenue;
                     salesByShop[shop] += revenue;

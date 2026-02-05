@@ -382,16 +382,40 @@ function calculateRestocking(data, productId) {
 
 function calculateSold(data, productId) {
     let total = 0;
+
+    // Regular sales
     if (data?.regularSales) {
-        Object.values(data.regularSales).forEach(s => {
-            if (s.feedType === productId) total += parseFloat(s.bags || 0);
+        Object.values(data.regularSales).forEach(sale => {
+            // NEW: handle multi-item sales
+            if (Array.isArray(sale.items)) {
+                sale.items.forEach(item => {
+                    if (item.feedType === productId) {
+                        total += parseFloat(item.bags || 0);
+                    }
+                });
+            }
+            // BACKWARD COMPATIBILITY
+            else if (sale.feedType === productId) {
+                total += parseFloat(sale.bags || 0);
+            }
         });
     }
+
+    // Credit sales
     if (data?.creditSales) {
-        Object.values(data.creditSales).forEach(s => {
-            if (s.feedType === productId) total += parseFloat(s.bags || 0);
+        Object.values(data.creditSales).forEach(sale => {
+            if (Array.isArray(sale.items)) {
+                sale.items.forEach(item => {
+                    if (item.feedType === productId) {
+                        total += parseFloat(item.bags || 0);
+                    }
+                });
+            } else if (sale.feedType === productId) {
+                total += parseFloat(sale.bags || 0);
+            }
         });
     }
+
     return total;
 }
 
@@ -407,11 +431,21 @@ function calculateTransfersOut(data, productId) {
 
 function calculateCreditorReleases(data, productId) {
     let total = 0;
+
     if (data?.creditorReleases) {
-        Object.values(data.creditorReleases).forEach(c => {
-            if (c.feedType === productId) total += parseFloat(c.bags || 0);
+        Object.values(data.creditorReleases).forEach(release => {
+            if (Array.isArray(release.items)) {
+                release.items.forEach(item => {
+                    if (item.feedType === productId) {
+                        total += parseFloat(item.bags || 0);
+                    }
+                });
+            } else if (release.feedType === productId) {
+                total += parseFloat(release.bags || 0);
+            }
         });
     }
+
     return total;
 }
 
@@ -3601,8 +3635,9 @@ async function sendNewMessage() {
 
     closeNewMessageModal();
 
-    // For now: send to each recipient as a 1-on-1 chat (WhatsApp-style)
-    for (const recipient of newMsgRecipients) {
+    try {
+        // For now: send to each recipient as a 1-on-1 chat (WhatsApp-style)
+        for (const recipient of newMsgRecipients) {
         const chatId = buildChatId(currentUser.uid, recipient.uid);
         const chatRef = doc(db, 'chats', chatId);
 
@@ -3640,9 +3675,13 @@ async function sendNewMessage() {
             unreadBy,
             unreadCount: 1
         });
-    }
+        }
 
-    showToast('Message sent!', 'success');
+        showToast('Message sent!', 'success');
+    } catch (error) {
+        console.error('Send message error:', error);
+        showToast('Error sending message: ' + error.message, 'error');
+    }
 }
 
 /* ============================================================

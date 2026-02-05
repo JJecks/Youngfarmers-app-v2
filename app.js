@@ -3601,9 +3601,8 @@ async function sendNewMessage() {
 
     closeNewMessageModal();
 
-    try {
-        // For now: send to each recipient as a 1-on-1 chat (WhatsApp-style)
-        for (const recipient of newMsgRecipients) {
+    // For now: send to each recipient as a 1-on-1 chat (WhatsApp-style)
+    for (const recipient of newMsgRecipients) {
         const chatId = buildChatId(currentUser.uid, recipient.uid);
         const chatRef = doc(db, 'chats', chatId);
 
@@ -3641,13 +3640,9 @@ async function sendNewMessage() {
             unreadBy,
             unreadCount: 1
         });
-        }
-
-        showToast('Message sent!', 'success');
-    } catch (error) {
-        console.error('Send message error:', error);
-        showToast('Error sending message: ' + error.message, 'error');
     }
+
+    showToast('Message sent!', 'success');
 }
 
 /* ============================================================

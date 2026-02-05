@@ -1266,17 +1266,24 @@ Credit Sales
     font-style: italic;
 }
 
-/* Action buttons (edit / delete) — appear on hover */
+/* Action buttons (edit / delete) — always visible */
 .msg-actions {
-    display: none;
+    display: flex;
     gap: 4px;
     position: absolute;
     top: -28px;
     right: 0;
+    z-index: 10;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
 }
 .msg-bubble-wrap.mine .msg-actions { right: 0; }
 .msg-bubble-wrap.theirs .msg-actions { left: 0; right: auto; }
-.msg-bubble:hover .msg-actions { display: flex; }
+
+/* Make actions fully visible on hover */
+.msg-bubble-wrap:hover .msg-actions { 
+    opacity: 1; 
+}
 
 .msg-action-btn {
     background: rgba(255,255,255,0.92);

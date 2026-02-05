@@ -742,11 +742,27 @@ function renderRecordedTransactions(shopData, shop, date) {
                 const product = productsData.find(p => p.id === val.feedType);
                 const productName = product ? product.name : val.feedType;
                 
-                const transactionDetails = Object.entries(val).map(([k, v]) => {
-                    if (k === 'timestamp') return ''; // Skip timestamp display
-                    if (k === 'feedType') return `${k}: ${productName}`;
-                    return `${k}: ${v}`;
-                }).filter(Boolean).join(', ');
+const transactionDetails = Object.entries(val).map(([k, v]) => {
+    if (k === 'timestamp') return ''; // Skip timestamp display
+    if (k === 'feedType') return `${k}: ${productName}`;
+    
+    // Handle items array (for multi-item sales)
+    if (k === 'items' && Array.isArray(v)) {
+        const itemsText = v.map(item => {
+            const prod = productsData.find(p => p.id === item.feedType);
+            const prodName = prod ? prod.name : (item.feedName || item.feedType);
+            return `${prodName} (${item.bags} bags)`;
+        }).join(', ');
+        return `items: [${itemsText}]`;
+    }
+    
+    // Handle objects (convert to readable format)
+    if (typeof v === 'object' && v !== null) {
+        return `${k}: ${JSON.stringify(v)}`;
+    }
+    
+    return `${k}: ${v}`;
+}).filter(Boolean).join(', ');
                 
                 const deleteBtn = canDelete ? 
                     `<button onclick="deleteTransaction('${shop}', '${date}', '${section.collection}', '${key}')" 

@@ -1647,3 +1647,42 @@ Credit Sales
     transform: translateX(5px) scale(0.98);
 }
 
+/* ============================================================
+   ENHANCED RECEIPT SELECTION STYLES
+   Add this to your styles.css file
+   ============================================================ */
+
+/* Transaction rows that can be selected for receipts */
+.receipt-selectable {
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+.receipt-selectable:hover {
+    background: #f9f9f9;
+}
+
+/* Selected transaction highlight */
+.receipt-selectable[style*="background: rgb(232, 245, 233)"] {
+    animation: selectPulse 0.3s ease;
+}
+
+@keyframes selectPulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.02);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Prevent text selection during long press */
+.transaction-row {
+    -webkit-tap-highlight-color: transparent;
+}

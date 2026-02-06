@@ -716,6 +716,17 @@ function setupOpeningStockSave(shop, date, saved, isFirst) {
         showToast('Copied to clipboard!', 'success');
     };
 }
+/* ============================================================
+   ENHANCED RECEIPT GENERATION - ADD TO APP.JS
+   This adds multi-select functionality in Shop View
+   ============================================================ */
+
+// Global variable to track selected transactions
+let selectedTransactionsForReceipt = [];
+
+// Modified renderRecordedTransactions function
+// REPLACE the existing renderRecordedTransactions function (around line 719) with this enhanced version:
+
 function renderRecordedTransactions(shopData, shop, date) {
     const container = document.getElementById('transactions-list');
     container.innerHTML = '';
@@ -732,6 +743,20 @@ function renderRecordedTransactions(shopData, shop, date) {
     ];
 
     const canDelete = currentUserData && currentUserData.role === 'manager_full';
+    
+    // Add "Generate Receipts" button at the top
+    const headerDiv = document.createElement('div');
+    headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 8px;';
+    headerDiv.innerHTML = `
+        <div>
+            <span id="selected-count" style="font-weight: bold; color: #2e7d32;">0 transactions selected</span>
+            <span style="margin-left: 10px; font-size: 12px; color: #666;">(Long-press to select)</span>
+        </div>
+        <button id="generate-selected-receipts-btn" class="btn-secondary" style="display: none; background: #2e7d32;" disabled>
+            🧾 Generate Receipts
+        </button>
+    `;
+    container.appendChild(headerDiv);
 
     sections.forEach(section => {
         if (section.data && Object.keys(section.data).length > 0) {
@@ -742,27 +767,26 @@ function renderRecordedTransactions(shopData, shop, date) {
                 const product = productsData.find(p => p.id === val.feedType);
                 const productName = product ? product.name : val.feedType;
                 
-const transactionDetails = Object.entries(val).map(([k, v]) => {
-    if (k === 'timestamp') return ''; // Skip timestamp display
-    if (k === 'feedType') return `${k}: ${productName}`;
-    
-    // Handle items array (for multi-item sales)
-    if (k === 'items' && Array.isArray(v)) {
-        const itemsText = v.map(item => {
-            const prod = productsData.find(p => p.id === item.feedType);
-            const prodName = prod ? prod.name : (item.feedName || item.feedType);
-            return `${prodName} (${item.bags} bags)`;
-        }).join(', ');
-        return `items: [${itemsText}]`;
-    }
-    
-    // Handle objects (convert to readable format)
-    if (typeof v === 'object' && v !== null) {
-        return `${k}: ${JSON.stringify(v)}`;
-    }
-    
-    return `${k}: ${v}`;
-}).filter(Boolean).join(', ');
+                const transactionDetails = Object.entries(val).map(([k, v]) => {
+                    if (k === 'timestamp') return '';
+                    if (k === 'feedType') return `${k}: ${productName}`;
+                    
+                    // Handle items array (for multi-item sales)
+                    if (k === 'items' && Array.isArray(v)) {
+                        const itemsText = v.map(item => {
+                            const prod = productsData.find(p => p.id === item.feedType);
+                            const prodName = prod ? prod.name : (item.feedName || item.feedType);
+                            return `${prodName} (${item.bags} bags)`;
+                        }).join(', ');
+                        return `items: [${itemsText}]`;
+                    }
+                    
+                    if (typeof v === 'object' && v !== null) {
+                        return `${k}: ${JSON.stringify(v)}`;
+                    }
+                    
+                    return `${k}: ${v}`;
+                }).filter(Boolean).join(', ');
                 
                 const deleteBtn = canDelete ? 
                     `<button onclick="deleteTransaction('${shop}', '${date}', '${section.collection}', '${key}')" 
@@ -770,7 +794,15 @@ const transactionDetails = Object.entries(val).map(([k, v]) => {
                      ❌ Delete
                      </button>` : '';
                 
-                return `<div style="padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                // Determine if this transaction can have a receipt (only regular sales and credit sales)
+                const canGenerateReceipt = (section.collection === 'regularSales' || section.collection === 'creditSales');
+                const transactionId = `${section.collection}-${key}`;
+                
+                return `<div class="transaction-row ${canGenerateReceipt ? 'receipt-selectable' : ''}" 
+                        data-transaction-id="${transactionId}"
+                        data-collection="${section.collection}"
+                        data-key="${key}"
+                        style="padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: ${canGenerateReceipt ? 'pointer' : 'default'}; transition: background 0.2s;">
                     <span>${transactionDetails}</span>
                     ${deleteBtn}
                 </div>`;
@@ -785,7 +817,201 @@ const transactionDetails = Object.entries(val).map(([k, v]) => {
             container.appendChild(div);
         }
     });
+    
+    // Add event listeners for long-press selection
+    setupTransactionSelection(shop, date);
 }
+
+// Setup long-press selection for transactions
+function setupTransactionSelection(shop, date) {
+    selectedTransactionsForReceipt = [];
+    updateSelectedCount();
+    
+    const selectableRows = document.querySelectorAll('.receipt-selectable');
+    
+    selectableRows.forEach(row => {
+        let pressTimer;
+        
+        // Mouse events (desktop)
+        row.addEventListener('mousedown', (e) => {
+            pressTimer = setTimeout(() => {
+                toggleTransactionSelection(row);
+            }, 500); // 500ms long press
+        });
+        
+        row.addEventListener('mouseup', () => {
+            clearTimeout(pressTimer);
+        });
+        
+        row.addEventListener('mouseleave', () => {
+            clearTimeout(pressTimer);
+        });
+        
+        // Touch events (mobile)
+        row.addEventListener('touchstart', (e) => {
+            pressTimer = setTimeout(() => {
+                toggleTransactionSelection(row);
+            }, 500);
+        });
+        
+        row.addEventListener('touchend', () => {
+            clearTimeout(pressTimer);
+        });
+        
+        row.addEventListener('touchmove', () => {
+            clearTimeout(pressTimer);
+        });
+        
+        // Click to select if already in selection mode
+        row.addEventListener('click', (e) => {
+            if (selectedTransactionsForReceipt.length > 0) {
+                toggleTransactionSelection(row);
+            }
+        });
+    });
+    
+    // Setup generate button
+    const generateBtn = document.getElementById('generate-selected-receipts-btn');
+    if (generateBtn) {
+        generateBtn.onclick = () => generateSelectedReceipts(shop, date);
+    }
+}
+
+// Toggle transaction selection
+function toggleTransactionSelection(row) {
+    const transactionId = row.dataset.transactionId;
+    const collection = row.dataset.collection;
+    const key = row.dataset.key;
+    
+    const index = selectedTransactionsForReceipt.findIndex(t => t.id === transactionId);
+    
+    if (index > -1) {
+        // Deselect
+        selectedTransactionsForReceipt.splice(index, 1);
+        row.style.background = '';
+        row.style.borderLeft = '';
+    } else {
+        // Select
+        selectedTransactionsForReceipt.push({
+            id: transactionId,
+            collection: collection,
+            key: key
+        });
+        row.style.background = '#e8f5e9';
+        row.style.borderLeft = '4px solid #2e7d32';
+    }
+    
+    updateSelectedCount();
+}
+
+// Update selected count display
+function updateSelectedCount() {
+    const countElement = document.getElementById('selected-count');
+    const generateBtn = document.getElementById('generate-selected-receipts-btn');
+    
+    const count = selectedTransactionsForReceipt.length;
+    
+    if (countElement) {
+        countElement.textContent = `${count} transaction${count !== 1 ? 's' : ''} selected`;
+        countElement.style.color = count > 0 ? '#2e7d32' : '#666';
+    }
+    
+    if (generateBtn) {
+        if (count > 0) {
+            generateBtn.style.display = 'inline-block';
+            generateBtn.disabled = false;
+            generateBtn.textContent = `🧾 Generate ${count} Receipt${count !== 1 ? 's' : ''}`;
+        } else {
+            generateBtn.style.display = 'none';
+            generateBtn.disabled = true;
+        }
+    }
+}
+
+// Generate receipts for selected transactions
+async function generateSelectedReceipts(shop, date) {
+    if (selectedTransactionsForReceipt.length === 0) {
+        showToast('Please select at least one transaction first', 'error');
+        return;
+    }
+    
+    try {
+        const shopDocRef = doc(db, 'shops', shop, 'daily', date);
+        const shopDoc = await getDoc(shopDocRef);
+        
+        if (!shopDoc.exists()) {
+            showToast('Transactions not found', 'error');
+            return;
+        }
+        
+        const shopData = shopDoc.data();
+        
+        // Generate receipt for each selected transaction
+        for (const transaction of selectedTransactionsForReceipt) {
+            const data = shopData[transaction.collection][transaction.key];
+            
+            if (transaction.collection === 'regularSales') {
+                const receiptData = {
+                    clientName: data.clientName,
+                    phoneNumber: data.phoneNumber,
+                    date: formatDate(new Date()),
+                    items: data.items || [],
+                    subtotal: data.subtotal || 0,
+                    discount: data.discount || 0,
+                    total: data.total || 0,
+                    paymentMethod: 'CASH',
+                    notes: ''
+                };
+                await generateReceipt(receiptData);
+                
+            } else if (transaction.collection === 'creditSales') {
+                const product = productsData.find(p => p.id === data.feedType);
+                const amount = (parseFloat(data.bags) * parseFloat(data.price)) - parseFloat(data.discount || 0);
+                
+                const receiptData = {
+                    clientName: data.debtorName,
+                    phoneNumber: data.phoneNumber || 'Not Provided',
+                    date: formatDate(new Date()),
+                    items: [{
+                        feedName: product ? product.name : data.feedType,
+                        feedType: data.feedType,
+                        bags: parseFloat(data.bags),
+                        pricePerBag: parseFloat(data.price),
+                        totalPrice: parseFloat(data.bags) * parseFloat(data.price)
+                    }],
+                    subtotal: parseFloat(data.bags) * parseFloat(data.price),
+                    discount: parseFloat(data.discount || 0),
+                    total: amount,
+                    paymentMethod: 'CREDIT',
+                    notes: 'Payment on credit - Outstanding balance to be settled'
+                };
+                await generateReceipt(receiptData);
+            }
+            
+            // Small delay between receipts to avoid overwhelming the browser
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        
+        showToast(`${selectedTransactionsForReceipt.length} receipt(s) generated successfully!`, 'success');
+        
+        // Clear selections
+        selectedTransactionsForReceipt = [];
+        document.querySelectorAll('.receipt-selectable').forEach(row => {
+            row.style.background = '';
+            row.style.borderLeft = '';
+        });
+        updateSelectedCount();
+        
+    } catch (error) {
+        console.error('Error generating receipts:', error);
+        showToast('Error generating receipts: ' + error.message, 'error');
+    }
+}
+
+// Make functions globally available
+window.generateSelectedReceipts = generateSelectedReceipts;
+window.toggleTransactionSelection = toggleTransactionSelection;
+
 
 async function deleteTransaction(shop, date, collection, transactionId) {
     // Double check permission

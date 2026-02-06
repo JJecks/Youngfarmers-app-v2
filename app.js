@@ -4993,3 +4993,455 @@ async function ungroupSelectedClients() {
         showToast('Error ungrouping clients: ' + error.message, 'error');
     }
 }
+
+/* ============================================================
+   RECEIPT GENERATION SYSTEM
+   ============================================================ */
+
+// Receipt numbering - stored in Firestore for persistence
+async function getNextReceiptNumber() {
+    try {
+        const receiptRef = doc(db, 'settings', 'receiptCounter');
+        const receiptDoc = await getDoc(receiptRef);
+        
+        let nextNumber = 1;
+        const year = new Date().getFullYear();
+        
+        if (receiptDoc.exists()) {
+            const data = receiptDoc.data();
+            // Reset counter if new year
+            if (data.year === year) {
+                nextNumber = (data.counter || 0) + 1;
+            }
+        }
+        
+        // Update counter
+        await setDoc(receiptRef, {
+            counter: nextNumber,
+            year: year,
+            lastUpdated: serverTimestamp()
+        });
+        
+        // Format: YFA2026FP001, YFA2026FP002, etc.
+        const receiptNumber = `YFA${year}FP${nextNumber.toString().padStart(3, '0')}`;
+        return receiptNumber;
+        
+    } catch (error) {
+        console.error('Error getting receipt number:', error);
+        // Fallback to timestamp-based if Firestore fails
+        return `YFA${new Date().getFullYear()}FP${Date.now().toString().slice(-6)}`;
+    }
+}
+
+// Generate PDF Receipt matching the exact template
+async function generateReceipt(transactionData) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+    });
+    
+    // A4 dimensions: 210mm x 297mm
+    const pageWidth = 210;
+    const pageHeight = 297;
+    
+    // Get receipt number
+    const receiptNumber = await getNextReceiptNumber();
+    
+    // Colors
+    const primaryGreen = [46, 125, 50]; // #2e7d32
+    const black = [0, 0, 0];
+    const gray = [100, 100, 100];
+    
+    // === HEADER SECTION ===
+    
+    // "PAYMENT RECEIPT" title - centered, large, bold
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...black);
+    const titleText = 'PAYMENT RECEIPT';
+    const titleWidth = doc.getTextWidth(titleText);
+    doc.text(titleText, (pageWidth - titleWidth) / 2, 25);
+    
+    // Company name - centered, large, green
+    doc.setFontSize(18);
+    doc.setTextColor(...primaryGreen);
+    doc.setFont('helvetica', 'bold');
+    const companyText = 'YOUNG FARMERS AGENCIES LTD';
+    const companyWidth = doc.getTextWidth(companyText);
+    doc.text(companyText, (pageWidth - companyWidth) / 2, 35);
+    
+    // Line separator
+    doc.setDrawColor(...primaryGreen);
+    doc.setLineWidth(0.5);
+    doc.line(20, 40, 190, 40);
+    
+    // === RECEIPT DETAILS SECTION ===
+    
+    doc.setFontSize(10);
+    doc.setTextColor(...black);
+    doc.setFont('helvetica', 'bold');
+    
+    // Left column
+    doc.text('RECEIPT NO.:', 20, 50);
+    doc.text('BILLED TO:', 20, 58);
+    doc.text('PHONE:', 20, 66);
+    doc.text('DATE:', 20, 74);
+    
+    // Right column (values)
+    doc.setFont('helvetica', 'normal');
+    doc.text(receiptNumber, 55, 50);
+    doc.text(transactionData.clientName || 'Walk-in Customer', 55, 58);
+    doc.text(transactionData.phoneNumber || 'Not Provided', 55, 66);
+    doc.text(transactionData.date || formatDate(new Date()), 55, 74);
+    
+    // === ITEMS TABLE ===
+    
+    let currentY = 85;
+    
+    // Table headers
+    doc.setFillColor(46, 125, 50);
+    doc.rect(20, currentY, 170, 8, 'F'); // Filled rectangle for header background
+    
+    doc.setTextColor(255, 255, 255); // White text
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('DESCRIPTION', 22, currentY + 5.5);
+    doc.text('QTY.', 115, currentY + 5.5);
+    doc.text('UNIT PRICE', 135, currentY + 5.5);
+    doc.text('TOTAL', 170, currentY + 5.5);
+    
+    currentY += 8;
+    
+    // Table rows
+    doc.setTextColor(...black);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    
+    const items = transactionData.items || [];
+    items.forEach((item, index) => {
+        const rowY = currentY + (index * 7);
+        
+        // Alternating row background
+        if (index % 2 === 0) {
+            doc.setFillColor(245, 245, 245);
+            doc.rect(20, rowY, 170, 7, 'F');
+        }
+        
+        doc.text(item.feedName || item.feedType, 22, rowY + 5);
+        doc.text(item.bags.toString(), 115, rowY + 5);
+        doc.text(`KSh ${item.pricePerBag.toLocaleString()}`, 135, rowY + 5);
+        doc.text(`KSh ${item.totalPrice.toLocaleString()}`, 165, rowY + 5, { align: 'right' });
+    });
+    
+    currentY += (items.length * 7) + 5;
+    
+    // === TOTALS SECTION ===
+    
+    // Border line
+    doc.setDrawColor(...gray);
+    doc.setLineWidth(0.3);
+    doc.line(20, currentY, 190, currentY);
+    
+    currentY += 8;
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    
+    // Sub-total
+    doc.text('SUB-TOTAL:', 120, currentY);
+    doc.text(`KSh ${(transactionData.subtotal || 0).toLocaleString()}`, 185, currentY, { align: 'right' });
+    
+    currentY += 7;
+    
+    // Discount
+    doc.text('DISCOUNT:', 120, currentY);
+    doc.setTextColor(...primaryGreen);
+    doc.text(`KSh ${(transactionData.discount || 0).toLocaleString()}`, 185, currentY, { align: 'right' });
+    
+    currentY += 7;
+    
+    // Total - larger, bold, green
+    doc.setFontSize(12);
+    doc.setTextColor(...primaryGreen);
+    doc.text('TOTAL:', 120, currentY);
+    doc.text(`KSh ${(transactionData.total || 0).toLocaleString()}`, 185, currentY, { align: 'right' });
+    
+    currentY += 10;
+    
+    // === PAYMENT INFO SECTION ===
+    
+    doc.setFontSize(9);
+    doc.setTextColor(...black);
+    doc.setFont('helvetica', 'bold');
+    
+    doc.text('PAYMENT METHOD:', 20, currentY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(transactionData.paymentMethod || 'CASH', 60, currentY);
+    
+    if (transactionData.transactionId) {
+        currentY += 6;
+        doc.setFont('helvetica', 'bold');
+        doc.text('TRANSACTION ID:', 20, currentY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(transactionData.transactionId, 60, currentY);
+    }
+    
+    if (transactionData.notes) {
+        currentY += 6;
+        doc.setFont('helvetica', 'bold');
+        doc.text('NOTES:', 20, currentY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(transactionData.notes, 60, currentY);
+    }
+    
+    // === FOOTER SECTION ===
+    
+    // Thank you message - centered, bold
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...primaryGreen);
+    const thanksText = 'THANKS FOR SHOPPING WITH US!';
+    const thanksWidth = doc.getTextWidth(thanksText);
+    doc.text(thanksText, (pageWidth - thanksWidth) / 2, 260);
+    
+    // Bottom company info - centered, smaller
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...gray);
+    const bottomText = 'YOUNG FARMERS AGENCIES LTD FEEDING THE FUTURE...';
+    const bottomWidth = doc.getTextWidth(bottomText);
+    doc.text(bottomText, (pageWidth - bottomWidth) / 2, 270);
+    
+    // Receipt number at bottom right
+    doc.setFontSize(8);
+    doc.setTextColor(...gray);
+    doc.text(receiptNumber, 185, 285, { align: 'right' });
+    
+    // === SAVE PDF ===
+    
+    const fileName = `Receipt_${receiptNumber}_${transactionData.clientName?.replace(/\s+/g, '_') || 'Customer'}_${formatDate(new Date()).replace(/-/g, '')}.pdf`;
+    doc.save(fileName);
+    
+    showToast('Receipt generated successfully!', 'success');
+}
+
+// Open Receipt Generation Modal
+function openReceiptModal() {
+    // Close side panel
+    document.getElementById('side-panel').classList.remove('open');
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.id = 'receipt-modal';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    
+    modal.innerHTML = `
+        <div class="modal-box" style="max-width: 600px;">
+            <div class="modal-header">
+                <h4>🧾 Generate Receipt</h4>
+                <button class="modal-close" onclick="closeReceiptModal()">✕</button>
+            </div>
+            <div style="padding: 20px;">
+                <p style="margin-bottom: 20px; color: #666;">Select a transaction from today's records to generate a receipt.</p>
+                
+                <div id="receipt-transactions-list" style="max-height: 400px; overflow-y: auto;">
+                    <p style="text-align: center; padding: 40px; color: #999;">Loading transactions...</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Load today's transactions
+    loadReceiptTransactions();
+}
+
+function closeReceiptModal() {
+    const modal = document.getElementById('receipt-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+async function loadReceiptTransactions() {
+    const container = document.getElementById('receipt-transactions-list');
+    
+    if (!currentShop) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #999;">
+                <p>Please select a shop first from the dashboard.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    try {
+        const shopDocRef = doc(db, 'shops', currentShop, 'daily', currentDate);
+        const shopDoc = await getDoc(shopDocRef);
+        
+        if (!shopDoc.exists()) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #999;">
+                    <p>No transactions recorded today.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const data = shopDoc.data();
+        let html = '';
+        
+        // Regular Sales
+        if (data.regularSales && Object.keys(data.regularSales).length > 0) {
+            html += `<h4 style="color: #2e7d32; margin-bottom: 10px;">Regular Sales</h4>`;
+            Object.entries(data.regularSales).forEach(([id, sale]) => {
+                html += `
+                    <div class="receipt-transaction-card" onclick="generateReceiptFromSale('${id}', 'regularSales')">
+                        <div>
+                            <strong>${sale.clientName || 'Walk-in Customer'}</strong>
+                            <div style="font-size: 12px; color: #666;">${sale.phoneNumber || 'No phone'}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <strong style="color: #2e7d32;">KSh ${(sale.total || 0).toLocaleString()}</strong>
+                            <div style="font-size: 12px; color: #666;">Click to generate</div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        
+        // Credit Sales
+        if (data.creditSales && Object.keys(data.creditSales).length > 0) {
+            html += `<h4 style="color: #c62828; margin-top: 20px; margin-bottom: 10px;">Credit Sales</h4>`;
+            Object.entries(data.creditSales).forEach(([id, sale]) => {
+                const product = productsData.find(p => p.id === sale.feedType);
+                const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                html += `
+                    <div class="receipt-transaction-card" onclick="generateReceiptFromCreditSale('${id}')">
+                        <div>
+                            <strong>${sale.debtorName || 'Customer'}</strong>
+                            <div style="font-size: 12px; color: #666;">${product ? product.name : sale.feedType} - ${sale.bags} bags</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <strong style="color: #c62828;">KSh ${amount.toLocaleString()}</strong>
+                            <div style="font-size: 12px; color: #666;">Click to generate</div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        
+        if (html === '') {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #999;">
+                    <p>No sales transactions recorded today.</p>
+                </div>
+            `;
+        } else {
+            container.innerHTML = html;
+        }
+        
+    } catch (error) {
+        console.error('Error loading transactions:', error);
+        container.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #d32f2f;">
+                <p>Error loading transactions. Please try again.</p>
+            </div>
+        `;
+    }
+}
+
+// Generate receipt from regular sale
+async function generateReceiptFromSale(saleId, collection) {
+    try {
+        const shopDocRef = doc(db, 'shops', currentShop, 'daily', currentDate);
+        const shopDoc = await getDoc(shopDocRef);
+        
+        if (!shopDoc.exists()) {
+            showToast('Transaction not found', 'error');
+            return;
+        }
+        
+        const sale = shopDoc.data()[collection][saleId];
+        
+        const receiptData = {
+            clientName: sale.clientName,
+            phoneNumber: sale.phoneNumber,
+            date: formatDate(new Date()),
+            items: sale.items || [],
+            subtotal: sale.subtotal || 0,
+            discount: sale.discount || 0,
+            total: sale.total || 0,
+            paymentMethod: 'CASH',
+            notes: ''
+        };
+        
+        await generateReceipt(receiptData);
+        closeReceiptModal();
+        
+    } catch (error) {
+        console.error('Error generating receipt:', error);
+        showToast('Error generating receipt: ' + error.message, 'error');
+    }
+}
+
+// Generate receipt from credit sale
+async function generateReceiptFromCreditSale(saleId) {
+    try {
+        const shopDocRef = doc(db, 'shops', currentShop, 'daily', currentDate);
+        const shopDoc = await getDoc(shopDocRef);
+        
+        if (!shopDoc.exists()) {
+            showToast('Transaction not found', 'error');
+            return;
+        }
+        
+        const sale = shopDoc.data().creditSales[saleId];
+        const product = productsData.find(p => p.id === sale.feedType);
+        const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+        
+        const receiptData = {
+            clientName: sale.debtorName,
+            phoneNumber: sale.phoneNumber || 'Not Provided',
+            date: formatDate(new Date()),
+            items: [{
+                feedName: product ? product.name : sale.feedType,
+                feedType: sale.feedType,
+                bags: parseFloat(sale.bags),
+                pricePerBag: parseFloat(sale.price),
+                totalPrice: parseFloat(sale.bags) * parseFloat(sale.price)
+            }],
+            subtotal: parseFloat(sale.bags) * parseFloat(sale.price),
+            discount: parseFloat(sale.discount || 0),
+            total: amount,
+            paymentMethod: 'CREDIT',
+            notes: 'Payment on credit - Outstanding balance to be settled'
+        };
+        
+        await generateReceipt(receiptData);
+        closeReceiptModal();
+        
+    } catch (error) {
+        console.error('Error generating receipt:', error);
+        showToast('Error generating receipt: ' + error.message, 'error');
+    }
+}
+
+// Make functions globally available
+window.generateReceipt = generateReceipt;
+window.openReceiptModal = openReceiptModal;
+window.closeReceiptModal = closeReceiptModal;
+window.generateReceiptFromSale = generateReceiptFromSale;
+window.generateReceiptFromCreditSale = generateReceiptFromCreditSale;
+
+// Wire up the panel button
+document.addEventListener('DOMContentLoaded', () => {
+    const receiptBtn = document.getElementById('panel-receipts');
+    if (receiptBtn) {
+        receiptBtn.addEventListener('click', openReceiptModal);
+    }
+});

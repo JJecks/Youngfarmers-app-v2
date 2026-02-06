@@ -1616,3 +1616,34 @@ Credit Sales
     transition: background 0.2s;
 }
 .all-msg-hard-delete-btn:hover { background: #b71c1c; }
+
+/* ============================================================
+   RECEIPT GENERATION STYLES
+   Add this to your styles.css file
+   ============================================================ */
+
+/* Receipt transaction cards in modal */
+.receipt-transaction-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    margin-bottom: 10px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.receipt-transaction-card:hover {
+    background: #f5f9f5;
+    border-color: #2e7d32;
+    box-shadow: 0 2px 8px rgba(46, 125, 50, 0.15);
+    transform: translateX(5px);
+}
+
+.receipt-transaction-card:active {
+    transform: translateX(5px) scale(0.98);
+}
+

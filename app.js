@@ -1569,14 +1569,20 @@ function showTransactionForm(formId, shop) {
                 </form>
             </div>
         `;
-        document.getElementById('transaction-form').onsubmit = async (e) => {
-            e.preventDefault();
-            await saveTransaction(shop, currentDate, 'prepayments', {
-                clientName: document.getElementById('form-client').value,
-                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
-                amountPaid: document.getElementById('form-amount').value
-            });
-        };
+document.getElementById('transaction-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const clientName = document.getElementById('form-client').value;
+    const phoneNumber = document.getElementById('form-phone').value || 'Not Provided';
+    const amountPaid = parseFloat(document.getElementById('form-amount').value);
+    
+    await saveTransaction(shop, currentDate, 'prepayments', {
+        clientName,
+        phoneNumber,
+        amountPaid
+    });
+    
+    showToast(`Prepayment of KSh ${amountPaid.toLocaleString()} recorded as sale for ${clientName}`, 'success');
+};
     } else if (formId === 'creditorRelease') {
         container.innerHTML = `
             <div class="form-box" style="border-color: #f57c00;">
@@ -1775,14 +1781,16 @@ async function loadCreditorsForRelease(shop) {
             const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
             const total = subtotal - discount;
             
-            await saveTransaction(shop, currentDate, 'creditorReleases', {
-                creditorName,
-                items,
-                subtotal,
-                discount,
-                total
-            });
-        };
+await saveTransaction(shop, currentDate, 'creditorReleases', {
+    creditorName,
+    items,
+    subtotal,
+    discount,
+    total
+});
+
+// Check if creditor balance goes negative (becomes debtor)
+await checkCreditorToDebtorTransfer(creditorName, total);
         
         document.querySelectorAll('.btn-cancel').forEach(btn => {
             btn.onclick = () => document.getElementById('form-container').innerHTML = '';
@@ -1826,16 +1834,159 @@ async function loadDebtorsForPayment(shop) {
         loading.style.display = 'none';
         form.style.display = 'grid';
         
-        form.onsubmit = async (e) => {
-            e.preventDefault();
-            await saveTransaction(shop, currentDate, 'debtPayments', {
-                debtorName: document.getElementById('form-debtor').value,
-                amountPaid: document.getElementById('form-amount').value,
-                paymentMethod: document.getElementById('form-method').value
-            });
-        };
+form.onsubmit = async (e) => {
+    e.preventDefault();
+    const debtorName = document.getElementById('form-debtor').value;
+    const amountPaid = parseFloat(document.getElementById('form-amount').value);
+    const paymentMethod = document.getElementById('form-method').value;
+    
+    await saveTransaction(shop, currentDate, 'debtPayments', {
+        debtorName,
+        amountPaid,
+        paymentMethod
+    });
+    
+    // Check if debtor overpaid (becomes creditor)
+    await checkDebtorToCreditorTransfer(debtorName, amountPaid, shop, currentDate);
+};
     }
 }
+
+/* ============================================================
+   CREDITOR-DEBTOR TRANSFER LOGIC
+   ============================================================ */
+
+// Check if creditor overspent and needs to transfer to debtors
+async function checkCreditorToDebtorTransfer(creditorName, releaseAmount) {
+    try {
+        // Calculate total prepaid by this creditor
+        let totalPrepaid = 0;
+        for (const shop of SHOPS) {
+            const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+            const snapshot = await getDocs(shopQuery);
+            
+            snapshot.forEach(docSnapshot => {
+                const data = docSnapshot.data();
+                if (data.prepayments) {
+                    Object.values(data.prepayments).forEach(payment => {
+                        if (payment.clientName === creditorName) {
+                            totalPrepaid += parseFloat(payment.amountPaid);
+                        }
+                    });
+                }
+            });
+        }
+        
+        // Calculate total feeds taken by this creditor
+        let totalFeedsTaken = 0;
+        for (const shop of SHOPS) {
+            const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+            const snapshot = await getDocs(shopQuery);
+            
+            snapshot.forEach(docSnapshot => {
+                const data = docSnapshot.data();
+                if (data.creditorReleases) {
+                    Object.values(data.creditorReleases).forEach(release => {
+                        if (release.creditorName === creditorName) {
+                            totalFeedsTaken += parseFloat(release.total || 0);
+                        }
+                    });
+                }
+            });
+        }
+        
+        const balance = totalPrepaid - totalFeedsTaken;
+        
+        // If balance is negative, creditor has overspent and becomes debtor
+        if (balance < 0) {
+            const debt = Math.abs(balance);
+            showToast(`${creditorName} has overspent by KSh ${debt.toLocaleString()}. Transferred to Debtors page.`, 'success');
+        }
+        
+    } catch (error) {
+        console.error('Error checking creditor to debtor transfer:', error);
+    }
+}
+
+// Check if debtor overpaid and needs to transfer to creditors
+async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, date) {
+    try {
+        // Calculate total debt
+        let totalOwed = 0;
+        for (const shopName of SHOPS) {
+            const shopQuery = query(collection(db, 'shops', shopName, 'daily'));
+            const snapshot = await getDocs(shopQuery);
+            
+            snapshot.forEach(docSnapshot => {
+                const data = docSnapshot.data();
+                if (data.creditSales) {
+                    Object.values(data.creditSales).forEach(sale => {
+                        if (sale.debtorName === debtorName) {
+                            const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                            totalOwed += amount;
+                        }
+                    });
+                }
+            });
+        }
+        
+        // Calculate total paid
+        let totalPaid = 0;
+        for (const shopName of SHOPS) {
+            const shopQuery = query(collection(db, 'shops', shopName, 'daily'));
+            const snapshot = await getDocs(shopQuery);
+            
+            snapshot.forEach(docSnapshot => {
+                const data = docSnapshot.data();
+                if (data.debtPayments) {
+                    Object.values(data.debtPayments).forEach(payment => {
+                        if (payment.debtorName === debtorName) {
+                            totalPaid += parseFloat(payment.amountPaid);
+                        }
+                    });
+                }
+            });
+        }
+        
+        const balance = totalPaid - totalOwed;
+        
+        // If balance is positive, debtor has overpaid and becomes creditor
+        if (balance > 0) {
+            const overpayment = balance;
+            
+            // Record the overpayment as a prepayment (which counts as a sale)
+            const shopDocRef = doc(db, 'shops', shop, 'daily', date);
+            const shopDoc = await getDoc(shopDocRef);
+            const existingData = shopDoc.exists() ? shopDoc.data() : {};
+            const transactionId = Date.now().toString();
+            
+            const existingPrepayments = existingData.prepayments || {};
+            await setDoc(shopDocRef, {
+                ...existingData,
+                prepayments: {
+                    ...existingPrepayments,
+                    [transactionId]: {
+                        clientName: debtorName,
+                        phoneNumber: 'From Debt Overpayment',
+                        amountPaid: overpayment,
+                        timestamp: new Date().toISOString(),
+                        note: 'Auto-generated from debt overpayment'
+                    }
+                }
+            });
+            
+            showToast(`${debtorName} overpaid by KSh ${overpayment.toLocaleString()}. Transferred to Creditors page and recorded as prepayment sale.`, 'success');
+        }
+        
+    } catch (error) {
+        console.error('Error checking debtor to creditor transfer:', error);
+    }
+}
+
+// Make functions globally available
+window.checkCreditorToDebtorTransfer = checkCreditorToDebtorTransfer;
+window.checkDebtorToCreditorTransfer = checkDebtorToCreditorTransfer;
+
 async function loadTotalSalesView() {
     showView('total-sales-view');
     const dateSelector = document.getElementById('total-sales-date');
@@ -1869,22 +2020,34 @@ async function loadTotalSalesData(date) {
             let bagsSold = 0;
             let salesAmount = 0;
             
+            // Calculate sales from bags sold
             productsData.forEach(product => {
                 const sold = calculateSold(data, product.id);
                 bagsSold += sold;
                 salesAmount += sold * product.sales;
             });
+            
+            // ADD PREPAYMENT SALES TO TOTAL (no bags involved)
+            let prepaymentSales = 0;
+            if (data.prepayments) {
+                Object.values(data.prepayments).forEach(payment => {
+                    prepaymentSales += parseFloat(payment.amountPaid);
+                });
+            }
+            
+            // Total sales = bag sales + prepayment sales
+            const totalShopSales = salesAmount + prepaymentSales;
 
             totalBagsRemaining += bagsRemaining;
             totalBagsSold += bagsSold;
-            totalSalesAmount += salesAmount;
+            totalSalesAmount += totalShopSales;
 
             const row = tbody.insertRow();
             row.innerHTML = `
                 <td>${shop}</td>
                 <td style="text-align: right;">${bagsRemaining.toFixed(1)}</td>
                 <td style="text-align: right;">${bagsSold.toFixed(1)}</td>
-                <td style="text-align: right; font-weight: bold;">KSh ${salesAmount.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold;">KSh ${totalShopSales.toLocaleString()}</td>
             `;
         }
     }
@@ -4246,6 +4409,17 @@ async function generateDoc1PDF(date) {
 
                 totalSalesAmount += salesAmount;
                 totalStockValue += stockValue;
+
+                // Add prepayment sales
+                let prepaymentSales = 0;
+                if (data.prepayments) {
+                    Object.values(data.prepayments).forEach(payment => {
+                        prepaymentSales += parseFloat(payment.amountPaid);
+                    });
+                }
+
+                 // Add to total sales for this shop
+                 salesAmount += prepaymentSales;
 
                 tableData.push([
                     idx + 1,

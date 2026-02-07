@@ -1798,6 +1798,7 @@ await checkCreditorToDebtorTransfer(creditorName, total);
     };
     
     renderCreditorReleaseForm();
+    };
 }
 
 async function loadDebtorsForPayment(shop) {

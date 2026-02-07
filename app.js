@@ -2633,6 +2633,47 @@ async function loadProductsFromFirestore() {
 async function loadAllClientsView() {
     showView('all-clients-view');
     
+    // Set up tab switching
+    setupClientTabs();
+    
+    // Initialize By Date tab (original functionality)
+    await loadClientsByDate();
+    
+    // Note: All Clients tab will load when user clicks it
+}
+
+// Setup tab switching for All Clients view
+function setupClientTabs() {
+    const tabs = document.querySelectorAll('.client-tab');
+    const tabContents = document.querySelectorAll('.client-tab-content');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', async () => {
+            // Remove active class from all tabs
+            tabs.forEach(t => t.classList.remove('active'));
+            tabContents.forEach(tc => tc.classList.remove('active'));
+            
+            // Add active class to clicked tab
+            tab.classList.add('active');
+            
+            const tabName = tab.dataset.tab;
+            const content = document.getElementById(`${tabName}-tab`);
+            if (content) {
+                content.classList.add('active');
+            }
+            
+            // Load data for the selected tab
+            if (tabName === 'by-date') {
+                await loadClientsByDate();
+            } else if (tabName === 'all-clients') {
+                await loadAllClientsSummary();
+            }
+        });
+    });
+}
+
+// ORIGINAL BY DATE FUNCTIONALITY (unchanged)
+async function loadClientsByDate() {
     const shopFilter = document.getElementById('client-shop-filter');
     shopFilter.innerHTML = '<option value="">All Shops</option>';
     SHOPS.forEach(shop => {
@@ -2662,16 +2703,13 @@ async function loadAllClientsView() {
                     const data = shopDoc.data();
                     if (data.regularSales) {
                         Object.values(data.regularSales).forEach(sale => {
-                            const product = productsData.find(p => p.id === sale.feedType);
-                            const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-                            
                             const row = tbody.insertRow();
                             row.innerHTML = `
                                 <td>${sale.clientName}</td>
                                 <td>${sale.phoneNumber || 'Not Provided'}</td>
-                                <td>${product ? product.name : sale.feedType}</td>
-                                <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
-                                <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
+                                <td>${sale.items ? sale.items.map(i => i.feedName).join(', ') : 'N/A'}</td>
+                                <td style="text-align: right;">${sale.items ? sale.items.reduce((sum, i) => sum + parseFloat(i.bags), 0).toFixed(1) : '0.0'}</td>
+                                <td style="text-align: right; font-weight: bold;">KSh ${(sale.total || 0).toLocaleString()}</td>
                                 <td>${shop}</td>
                                 <td>${formatDateDisplay(selectedDate)}</td>
                             `;
@@ -2686,6 +2724,980 @@ async function loadAllClientsView() {
     dateFilter.onchange = loadClients;
     await loadClients();
 }
+
+/* ============================================================
+   ALL CLIENTS SUMMARY - Aggregated View Across All Dates
+   ============================================================ */
+
+async function loadAllClientsSummary() {
+    const tbody = document.getElementById('all-clients-summary-body');
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #999;">Loading all clients...</td></tr>';
+    
+    showToast('Loading all clients...', 'success');
+    
+    // Data structure: { clientName: { phone, transactions, totalSpent, shops, firstDate, lastDate, type } }
+    const clientsData = {};
+    
+    // Collect data from all shops and all dates
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+        
+        snapshot.forEach(docSnapshot => {
+            const dateStr = docSnapshot.id;
+            const data = docSnapshot.data();
+            
+            // Process Regular Sales
+            if (data.regularSales) {
+                Object.values(data.regularSales).forEach(sale => {
+                    const clientName = sale.clientName;
+                    const phone = sale.phoneNumber || 'Not Provided';
+                    const amount = sale.total || 0;
+                    
+                    if (!clientsData[clientName]) {
+                        clientsData[clientName] = {
+                            phone: phone,
+                            transactions: 0,
+                            totalSpent: 0,
+                            shops: new Set(),
+                            dates: [],
+                            type: 'Regular',
+                            history: []
+                        };
+                    }
+                    
+                    clientsData[clientName].transactions++;
+                    clientsData[clientName].totalSpent += parseFloat(amount);
+                    clientsData[clientName].shops.add(shop);
+                    clientsData[clientName].dates.push(dateStr);
+                    clientsData[clientName].history.push({
+                        date: dateStr,
+                        shop: shop,
+                        amount: amount,
+                        type: 'Regular Sale',
+                        items: sale.items || []
+                    });
+                });
+            }
+            
+            // Process Credit Sales
+            if (data.creditSales) {
+                Object.values(data.creditSales).forEach(sale => {
+                    const clientName = sale.debtorName;
+                    const phone = sale.phoneNumber || 'Not Provided';
+                    const product = productsData.find(p => p.id === sale.feedType);
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    
+                    if (!clientsData[clientName]) {
+                        clientsData[clientName] = {
+                            phone: phone,
+                            transactions: 0,
+                            totalSpent: 0,
+                            shops: new Set(),
+                            dates: [],
+                            type: 'Debtor',
+                            history: []
+                        };
+                    }
+                    
+                    clientsData[clientName].transactions++;
+                    clientsData[clientName].totalSpent += parseFloat(amount);
+                    clientsData[clientName].shops.add(shop);
+                    clientsData[clientName].dates.push(dateStr);
+                    if (clientsData[clientName].type === 'Regular') {
+                        clientsData[clientName].type = 'Mixed';
+                    } else if (clientsData[clientName].type !== 'Mixed') {
+                        clientsData[clientName].type = 'Debtor';
+                    }
+                    clientsData[clientName].history.push({
+                        date: dateStr,
+                        shop: shop,
+                        amount: amount,
+                        type: 'Credit Sale',
+                        product: product ? product.name : sale.feedType,
+                        bags: sale.bags
+                    });
+                });
+            }
+            
+            // Process Prepayments
+            if (data.prepayments) {
+                Object.values(data.prepayments).forEach(payment => {
+                    const clientName = payment.clientName;
+                    const phone = payment.phoneNumber || 'Not Provided';
+                    const amount = parseFloat(payment.amountPaid);
+                    
+                    if (!clientsData[clientName]) {
+                        clientsData[clientName] = {
+                            phone: phone,
+                            transactions: 0,
+                            totalSpent: 0,
+                            shops: new Set(),
+                            dates: [],
+                            type: 'Creditor',
+                            history: []
+                        };
+                    }
+                    
+                    clientsData[clientName].transactions++;
+                    clientsData[clientName].totalSpent += parseFloat(amount);
+                    clientsData[clientName].shops.add(shop);
+                    clientsData[clientName].dates.push(dateStr);
+                    if (clientsData[clientName].type === 'Regular') {
+                        clientsData[clientName].type = 'Mixed';
+                    } else if (clientsData[clientName].type !== 'Mixed') {
+                        clientsData[clientName].type = 'Creditor';
+                    }
+                    clientsData[clientName].history.push({
+                        date: dateStr,
+                        shop: shop,
+                        amount: amount,
+                        type: 'Prepayment'
+                    });
+                });
+            }
+        });
+    }
+    
+    // Store globally for search and analysis
+    window.allClientsData = clientsData;
+    
+    // Render table
+    renderAllClientsTable(clientsData);
+    
+    // Setup search functionality
+    setupClientSearch(clientsData);
+    
+    // Setup long-press for client analysis
+    setupClientLongPress();
+    
+    showToast(`Loaded ${Object.keys(clientsData).length} clients`, 'success');
+}
+
+function renderAllClientsTable(clientsData, highlightClients = []) {
+    const tbody = document.getElementById('all-clients-summary-body');
+    tbody.innerHTML = '';
+    
+    if (Object.keys(clientsData).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #999;">No clients found</td></tr>';
+        return;
+    }
+    
+    // Sort clients by total spent (descending)
+    const sortedClients = Object.entries(clientsData).sort((a, b) => b[1].totalSpent - a[1].totalSpent);
+    
+    sortedClients.forEach(([clientName, data]) => {
+        const sortedDates = data.dates.sort();
+        const firstDate = sortedDates[0];
+        const lastDate = sortedDates[sortedDates.length - 1];
+        const shopsText = Array.from(data.shops).join(', ');
+        
+        // Determine status badge color
+        let statusClass = '';
+        let statusText = data.type;
+        if (data.type === 'Debtor') {
+            statusClass = 'color: #d32f2f; font-weight: bold;';
+        } else if (data.type === 'Creditor') {
+            statusClass = 'color: #f57c00; font-weight: bold;';
+        } else if (data.type === 'Mixed') {
+            statusClass = 'color: #1976d2; font-weight: bold;';
+        } else {
+            statusClass = 'color: #2e7d32; font-weight: bold;';
+        }
+        
+        const row = tbody.insertRow();
+        row.className = 'client-row-selectable';
+        row.dataset.clientName = clientName;
+        row.dataset.clientPhone = data.phone;
+        
+        // Highlight if in search results
+        if (highlightClients.includes(clientName)) {
+            row.classList.add('client-row-highlighted');
+        }
+        
+        row.innerHTML = `
+            <td style="font-weight: 600;">${clientName}</td>
+            <td>${data.phone}</td>
+            <td style="text-align: center;">${data.transactions}</td>
+            <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${data.totalSpent.toLocaleString()}</td>
+            <td>${shopsText}</td>
+            <td style="text-align: center;">${formatDateDisplay(firstDate)}</td>
+            <td style="text-align: center;">${formatDateDisplay(lastDate)}</td>
+            <td style="text-align: center;"><span style="${statusClass}">${statusText}</span></td>
+        `;
+    });
+}
+
+/* ============================================================
+   CLIENT SEARCH FUNCTIONALITY
+   ============================================================ */
+
+function setupClientSearch(clientsData) {
+    const searchInput = document.getElementById('client-search-input');
+    const clearBtn = document.getElementById('clear-search-btn');
+    const resultsSummary = document.getElementById('search-results-summary');
+    const resultsText = document.getElementById('search-results-text');
+    
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.trim().toLowerCase();
+        
+        if (searchTerm === '') {
+            // Clear search - show all clients
+            renderAllClientsTable(clientsData);
+            clearBtn.style.display = 'none';
+            resultsSummary.style.display = 'none';
+            return;
+        }
+        
+        // Find matching clients (fuzzy search)
+        const matchingClients = Object.keys(clientsData).filter(clientName => 
+            clientName.toLowerCase().includes(searchTerm)
+        );
+        
+        if (matchingClients.length > 0) {
+            // Render table with highlights
+            renderAllClientsTable(clientsData, matchingClients);
+            
+            // Show results summary
+            clearBtn.style.display = 'inline-block';
+            resultsSummary.style.display = 'block';
+            resultsText.textContent = `Found ${matchingClients.length} client${matchingClients.length !== 1 ? 's' : ''} matching "${e.target.value}"`;
+            
+            // Scroll to first match
+            const firstMatch = document.querySelector('.client-row-highlighted');
+            if (firstMatch) {
+                firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        } else {
+            // No matches
+            renderAllClientsTable(clientsData);
+            resultsSummary.style.display = 'block';
+            resultsText.textContent = `No clients found matching "${e.target.value}"`;
+            resultsText.style.color = '#d32f2f';
+            clearBtn.style.display = 'inline-block';
+        }
+    });
+    
+    // Clear search button
+    clearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        renderAllClientsTable(clientsData);
+        clearBtn.style.display = 'none';
+        resultsSummary.style.display = 'none';
+    });
+}
+
+/* ============================================================
+   LONG-PRESS FOR CLIENT ANALYSIS
+   ============================================================ */
+
+function setupClientLongPress() {
+    const rows = document.querySelectorAll('.client-row-selectable');
+    
+    rows.forEach(row => {
+        let pressTimer;
+        let contextMenu;
+        
+        // Mouse events (desktop)
+        row.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            pressTimer = setTimeout(() => {
+                showClientContextMenu(row, e.clientX, e.clientY);
+            }, 500); // 500ms long press
+        });
+        
+        row.addEventListener('mouseup', () => {
+            clearTimeout(pressTimer);
+        });
+        
+        row.addEventListener('mouseleave', () => {
+            clearTimeout(pressTimer);
+        });
+        
+        // Touch events (mobile)
+        row.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            pressTimer = setTimeout(() => {
+                showClientContextMenu(row, touch.clientX, touch.clientY);
+            }, 500);
+        });
+        
+        row.addEventListener('touchend', () => {
+            clearTimeout(pressTimer);
+        });
+        
+        row.addEventListener('touchmove', () => {
+            clearTimeout(pressTimer);
+        });
+    });
+}
+
+function showClientContextMenu(row, x, y) {
+    // Remove any existing context menu
+    const existing = document.querySelector('.client-context-menu');
+    if (existing) {
+        existing.remove();
+    }
+    
+    // Add visual feedback to row
+    row.classList.add('client-row-selected');
+    
+    // Create context menu
+    const menu = document.createElement('div');
+    menu.className = 'client-context-menu';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    
+    const clientName = row.dataset.clientName;
+    const clientPhone = row.dataset.clientPhone;
+    
+    menu.innerHTML = `
+        <div class="context-menu-item" onclick="viewClientAnalysis('${clientName}', '${clientPhone}')">
+            <span class="context-menu-icon">📊</span>
+            <span>View Client Analysis</span>
+        </div>
+    `;
+    
+    document.body.appendChild(menu);
+    
+    // Close menu when clicking outside
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                row.classList.remove('client-row-selected');
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 100);
+    
+    // Vibrate on mobile (if supported)
+    if (navigator.vibrate) {
+        navigator.vibrate(50);
+    }
+}
+
+// Make function globally available
+window.viewClientAnalysis = viewClientAnalysis;
+
+/* ============================================================
+   CLIENT ANALYSIS VIEW
+   ============================================================ */
+
+async function viewClientAnalysis(clientName, clientPhone) {
+    // Close context menu
+    const menu = document.querySelector('.client-context-menu');
+    if (menu) menu.remove();
+    
+    // Remove selection from all rows
+    document.querySelectorAll('.client-row-selected').forEach(r => r.classList.remove('client-row-selected'));
+    
+    // Show analysis view
+    showView('client-analysis-view');
+    
+    // Show loading state
+    showToast('Loading client analysis...', 'success');
+    
+    // Get client data
+    const clientData = window.allClientsData[clientName];
+    
+    if (!clientData) {
+        showToast('Client data not found', 'error');
+        return;
+    }
+    
+    // Render client analysis
+    await renderClientAnalysis(clientName, clientPhone, clientData);
+    
+    // Setup back button
+    document.getElementById('back-to-clients-btn').onclick = () => {
+        loadAllClientsView();
+        // Switch to All Clients tab
+        setTimeout(() => {
+            const allClientsTab = document.querySelector('[data-tab="all-clients"]');
+            if (allClientsTab) allClientsTab.click();
+        }, 100);
+    };
+    
+    // Setup analysis tabs
+    setupAnalysisTabs();
+}
+
+async function renderClientAnalysis(clientName, clientPhone, clientData) {
+    // Calculate analytics
+    const analytics = calculateClientAnalytics(clientData);
+    
+    // === HEADER SECTION ===
+    
+    // Avatar (initials)
+    const initials = getInitials(clientName);
+    document.getElementById('client-avatar').textContent = initials;
+    
+    // Name and phone
+    document.getElementById('client-name-header').textContent = clientName;
+    document.getElementById('client-phone-header').textContent = clientPhone;
+    
+    // Badges
+    const badgesContainer = document.getElementById('client-badges');
+    badgesContainer.innerHTML = '';
+    
+    // Add type badge
+    let badgeClass = 'regular';
+    if (clientData.type === 'Debtor') badgeClass = 'debtor';
+    else if (clientData.type === 'Creditor') badgeClass = 'creditor';
+    else if (clientData.type === 'Mixed') badgeClass = 'vip';
+    
+    badgesContainer.innerHTML += `<span class="client-badge ${badgeClass}">${clientData.type}</span>`;
+    
+    // Add loyalty badge if high-value customer
+    if (clientData.totalSpent > 100000) {
+        badgesContainer.innerHTML += `<span class="client-badge vip">⭐ VIP Customer</span>`;
+    }
+    
+    // Quick stats
+    document.getElementById('total-spent-stat').textContent = `KSh ${clientData.totalSpent.toLocaleString()}`;
+    document.getElementById('total-transactions-stat').textContent = clientData.transactions;
+    
+    const sortedDates = clientData.dates.sort();
+    const firstDate = sortedDates[0];
+    document.getElementById('customer-since-stat').textContent = formatDateDisplay(firstDate);
+    
+    // === OVERVIEW TAB ===
+    
+    // Behavior profile
+    document.getElementById('customer-type').textContent = clientData.type;
+    document.getElementById('payment-pattern').textContent = analytics.paymentPattern;
+    document.getElementById('loyalty-score').textContent = analytics.loyaltyScore + '/100';
+    document.getElementById('preferred-shop').textContent = analytics.preferredShop;
+    
+    // Charts
+    renderClientPurchaseTrendChart(clientData);
+    renderClientProductPreferenceChart(clientData);
+    renderClientPaymentMethodChart(clientData);
+    
+    // === HISTORY TAB ===
+    renderClientTransactionHistory(clientData);
+    
+    // === INSIGHTS TAB ===
+    renderClientInsights(clientName, clientData, analytics);
+}
+
+function calculateClientAnalytics(clientData) {
+    // Determine payment pattern
+    const creditTransactions = clientData.history.filter(h => h.type === 'Credit Sale').length;
+    const regularTransactions = clientData.history.filter(h => h.type === 'Regular Sale').length;
+    const prepaymentTransactions = clientData.history.filter(h => h.type === 'Prepayment').length;
+    
+    let paymentPattern = 'Cash';
+    if (creditTransactions > regularTransactions) {
+        paymentPattern = 'Mostly Credit';
+    } else if (prepaymentTransactions > 0) {
+        paymentPattern = 'Prepayment';
+    } else if (creditTransactions > 0 && regularTransactions > 0) {
+        paymentPattern = 'Mixed';
+    }
+    
+    // Calculate loyalty score (0-100)
+    let loyaltyScore = 0;
+    loyaltyScore += Math.min(clientData.transactions * 5, 30); // Up to 30 points for transactions
+    loyaltyScore += Math.min(clientData.totalSpent / 1000, 40); // Up to 40 points for spending
+    
+    const daysSinceFirst = daysBetween(clientData.dates.sort()[0], formatDate(new Date()));
+    loyaltyScore += Math.min(daysSinceFirst / 10, 30); // Up to 30 points for longevity
+    
+    loyaltyScore = Math.min(Math.round(loyaltyScore), 100);
+    
+    // Preferred shop (most frequent)
+    const shopCounts = {};
+    clientData.history.forEach(h => {
+        shopCounts[h.shop] = (shopCounts[h.shop] || 0) + 1;
+    });
+    const preferredShop = Object.keys(shopCounts).reduce((a, b) => shopCounts[a] > shopCounts[b] ? a : b);
+    
+    // Average transaction value
+    const avgTransactionValue = clientData.totalSpent / clientData.transactions;
+    
+    return {
+        paymentPattern,
+        loyaltyScore,
+        preferredShop,
+        avgTransactionValue,
+        creditRatio: creditTransactions / clientData.transactions,
+        prepaymentRatio: prepaymentTransactions / clientData.transactions
+    };
+}
+
+// Helper function to calculate days between dates
+function daysBetween(date1Str, date2Str) {
+    const [d1, m1, y1] = date1Str.split('-').map(Number);
+    const [d2, m2, y2] = date2Str.split('-').map(Number);
+    const date1 = new Date(y1, m1 - 1, d1);
+    const date2 = new Date(y2, m2 - 1, d2);
+    const diffTime = Math.abs(date2 - date1);
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+/* ============================================================
+   CLIENT ANALYSIS CHARTS
+   ============================================================ */
+
+function renderClientPurchaseTrendChart(clientData) {
+    const ctx = document.getElementById('client-purchase-trend-chart');
+    
+    // Destroy existing chart if it exists
+    if (window.clientPurchaseTrendChart) {
+        window.clientPurchaseTrendChart.destroy();
+    }
+    
+    // Group purchases by date
+    const purchasesByDate = {};
+    clientData.history.forEach(h => {
+        if (!purchasesByDate[h.date]) {
+            purchasesByDate[h.date] = 0;
+        }
+        purchasesByDate[h.date] += h.amount;
+    });
+    
+    // Sort dates
+    const sortedDates = Object.keys(purchasesByDate).sort((a, b) => {
+        const [dayA, monthA, yearA] = a.split('-').map(Number);
+        const [dayB, monthB, yearB] = b.split('-').map(Number);
+        const dateA = new Date(yearA, monthA - 1, dayA);
+        const dateB = new Date(yearB, monthB - 1, dayB);
+        return dateA - dateB;
+    });
+    
+    const labels = sortedDates.map(d => formatDateDisplay(d).split(' ').slice(0, 2).join(' '));
+    const data = sortedDates.map(d => purchasesByDate[d]);
+    
+    window.clientPurchaseTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Purchase Amount',
+                data: data,
+                borderColor: '#2e7d32',
+                backgroundColor: 'rgba(46, 125, 50, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'KSh ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'KSh ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderClientProductPreferenceChart(clientData) {
+    const ctx = document.getElementById('client-product-preference-chart');
+    
+    // Destroy existing chart
+    if (window.clientProductPreferenceChart) {
+        window.clientProductPreferenceChart.destroy();
+    }
+    
+    // Count product purchases
+    const productCounts = {};
+    clientData.history.forEach(h => {
+        if (h.items) {
+            h.items.forEach(item => {
+                const productName = item.feedName || item.feedType;
+                productCounts[productName] = (productCounts[productName] || 0) + parseFloat(item.bags);
+            });
+        } else if (h.product) {
+            productCounts[h.product] = (productCounts[h.product] || 0) + parseFloat(h.bags || 0);
+        }
+    });
+    
+    // Get top 5 products
+    const sortedProducts = Object.entries(productCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+    
+    const labels = sortedProducts.map(p => p[0]);
+    const data = sortedProducts.map(p => p[1]);
+    const colors = [
+        '#2e7d32',
+        '#43a047',
+        '#66bb6a',
+        '#81c784',
+        '#a5d6a7'
+    ];
+    
+    window.clientProductPreferenceChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + context.parsed + ' bags';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderClientPaymentMethodChart(clientData) {
+    const ctx = document.getElementById('client-payment-method-chart');
+    
+    // Destroy existing chart
+    if (window.clientPaymentMethodChart) {
+        window.clientPaymentMethodChart.destroy();
+    }
+    
+    // Count payment types
+    const paymentTypes = {
+        'Cash Sales': 0,
+        'Credit Sales': 0,
+        'Prepayments': 0
+    };
+    
+    clientData.history.forEach(h => {
+        if (h.type === 'Regular Sale') {
+            paymentTypes['Cash Sales']++;
+        } else if (h.type === 'Credit Sale') {
+            paymentTypes['Credit Sales']++;
+        } else if (h.type === 'Prepayment') {
+            paymentTypes['Prepayments']++;
+        }
+    });
+    
+    const labels = Object.keys(paymentTypes);
+    const data = Object.values(paymentTypes);
+    const colors = ['#2e7d32', '#c62828', '#f57c00'];
+    
+    window.clientPaymentMethodChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+/* ============================================================
+   CLIENT TRANSACTION HISTORY TIMELINE
+   ============================================================ */
+
+function renderClientTransactionHistory(clientData) {
+    const container = document.getElementById('transaction-timeline');
+    
+    // Sort history by date (most recent first)
+    const sortedHistory = [...clientData.history].sort((a, b) => {
+        const [dayA, monthA, yearA] = a.date.split('-').map(Number);
+        const [dayB, monthB, yearB] = b.date.split('-').map(Number);
+        const dateA = new Date(yearA, monthA - 1, dayA);
+        const dateB = new Date(yearB, monthB - 1, dayB);
+        return dateB - dateA;
+    });
+    
+    // Apply history filter
+    const historyFilter = document.getElementById('history-filter');
+    historyFilter.onchange = () => {
+        const filterValue = parseInt(historyFilter.value);
+        if (filterValue === 'all') {
+            renderHistoryItems(sortedHistory);
+        } else {
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - filterValue);
+            
+            const filtered = sortedHistory.filter(h => {
+                const [day, month, year] = h.date.split('-').map(Number);
+                const transDate = new Date(year, month - 1, day);
+                return transDate >= cutoffDate;
+            });
+            
+            renderHistoryItems(filtered);
+        }
+    };
+    
+    renderHistoryItems(sortedHistory);
+    
+    function renderHistoryItems(history) {
+        if (history.length === 0) {
+            container.innerHTML = '<p style="text-align: center; padding: 40px; color: #999;">No transactions in this period</p>';
+            return;
+        }
+        
+        let html = '';
+        history.forEach(h => {
+            let typeClass = 'regular';
+            let typeLabel = h.type;
+            let details = '';
+            
+            if (h.type === 'Regular Sale') {
+                typeClass = 'regular';
+                if (h.items && h.items.length > 0) {
+                    details = h.items.map(i => `${i.feedName} (${i.bags} bags)`).join(', ');
+                }
+            } else if (h.type === 'Credit Sale') {
+                typeClass = 'credit';
+                details = h.product ? `${h.product} (${h.bags} bags)` : '';
+            } else if (h.type === 'Prepayment') {
+                typeClass = 'prepayment';
+                details = 'Prepaid for future purchases';
+            }
+            
+            html += `
+                <div class="timeline-item">
+                    <div class="timeline-date">${formatDateDisplay(h.date)}</div>
+                    <div class="timeline-content">
+                        <div class="timeline-amount">KSh ${h.amount.toLocaleString()}</div>
+                        <div class="timeline-shop">${h.shop}</div>
+                        ${details ? `<div style="color: #666; font-size: 13px; margin-top: 5px;">${details}</div>` : ''}
+                        <span class="timeline-type ${typeClass}">${typeLabel}</span>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+    }
+}
+
+/* ============================================================
+   CLIENT INSIGHTS & RECOMMENDATIONS
+   ============================================================ */
+
+function renderClientInsights(clientName, clientData, analytics) {
+    const container = document.getElementById('client-insights');
+    
+    let insights = [];
+    
+    // Insight 1: Spending pattern
+    if (analytics.avgTransactionValue > 50000) {
+        insights.push({
+            type: 'positive',
+            icon: '💰',
+            title: 'High-Value Customer',
+            text: `${clientName} has an average transaction value of KSh ${Math.round(analytics.avgTransactionValue).toLocaleString()}, which is above average. Consider offering volume discounts or VIP treatment.`
+        });
+    }
+    
+    // Insight 2: Payment behavior
+    if (analytics.creditRatio > 0.7) {
+        insights.push({
+            type: 'alert',
+            icon: '⚠️',
+            title: 'High Credit Usage',
+            text: `${Math.round(analytics.creditRatio * 100)}% of transactions are on credit. Monitor outstanding balances closely and consider setting credit limits.`
+        });
+    } else if (analytics.prepaymentRatio > 0.3) {
+        insights.push({
+            type: 'positive',
+            icon: '⭐',
+            title: 'Reliable Prepayment Pattern',
+            text: `This customer frequently makes prepayments (${Math.round(analytics.prepaymentRatio * 100)}%). Consider offering prepayment incentives or loyalty rewards.`
+        });
+    }
+    
+    // Insight 3: Loyalty
+    if (analytics.loyaltyScore >= 70) {
+        insights.push({
+            type: 'positive',
+            icon: '🏆',
+            title: 'Loyal Customer',
+            text: `With a loyalty score of ${analytics.loyaltyScore}/100, ${clientName} is a valuable long-term customer. Ensure continued excellent service.`
+        });
+    } else if (analytics.loyaltyScore < 40) {
+        insights.push({
+            type: 'warning',
+            icon: '📊',
+            title: 'New or Occasional Customer',
+            text: `Low loyalty score suggests this is either a new customer or infrequent buyer. Consider engagement strategies to increase visit frequency.`
+        });
+    }
+    
+    // Insight 4: Shop preference
+    if (analytics.preferredShop) {
+        const shopVisits = clientData.history.filter(h => h.shop === analytics.preferredShop).length;
+        const percentage = Math.round((shopVisits / clientData.transactions) * 100);
+        
+        insights.push({
+            type: 'positive',
+            icon: '📍',
+            title: 'Strong Shop Preference',
+            text: `${clientName} prefers ${analytics.preferredShop} (${percentage}% of transactions). Ensure this location is well-stocked with their preferred products.`
+        });
+    }
+    
+    // Insight 5: Recent activity
+    const sortedDates = clientData.dates.sort();
+    const lastDate = sortedDates[sortedDates.length - 1];
+    const daysSinceLastPurchase = daysBetween(lastDate, formatDate(new Date()));
+    
+    if (daysSinceLastPurchase > 30) {
+        insights.push({
+            type: 'warning',
+            icon: '⏰',
+            title: 'Inactive Customer',
+            text: `Last purchase was ${daysSinceLastPurchase} days ago. Consider reaching out with a special offer to re-engage.`
+        });
+    } else if (daysSinceLastPurchase < 7) {
+        insights.push({
+            type: 'positive',
+            icon: '🔥',
+            title: 'Active Customer',
+            text: `Recent purchase within the last week. Customer is actively engaged with your business.`
+        });
+    }
+    
+    // Render insights
+    let html = '';
+    insights.forEach(insight => {
+        html += `
+            <div class="insight-card ${insight.type}">
+                <div class="insight-icon">${insight.icon}</div>
+                <div class="insight-content">
+                    <h4>${insight.title}</h4>
+                    <p>${insight.text}</p>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html || '<p style="text-align: center; padding: 40px; color: #999;">No insights available</p>';
+    
+    // Render financial status
+    renderFinancialStatus(clientName, clientData);
+}
+
+function renderFinancialStatus(clientName, clientData) {
+    const container = document.getElementById('financial-status');
+    
+    // Calculate financial metrics
+    let totalOwed = 0;
+    let totalPrepaid = 0;
+    let totalPaid = 0;
+    
+    clientData.history.forEach(h => {
+        if (h.type === 'Credit Sale') {
+            totalOwed += h.amount;
+        } else if (h.type === 'Prepayment') {
+            totalPrepaid += h.amount;
+        } else if (h.type === 'Regular Sale') {
+            totalPaid += h.amount;
+        }
+    });
+    
+    const netBalance = totalPrepaid - totalOwed;
+    
+    let html = `
+        <div class="financial-status-card">
+            <div class="financial-status-label">Total Spent (Cash)</div>
+            <div class="financial-status-value neutral">KSh ${totalPaid.toLocaleString()}</div>
+            <div class="financial-status-subtitle">Regular cash purchases</div>
+        </div>
+    `;
+    
+    if (totalOwed > 0) {
+        html += `
+            <div class="financial-status-card">
+                <div class="financial-status-label">Credit Purchases</div>
+                <div class="financial-status-value negative">KSh ${totalOwed.toLocaleString()}</div>
+                <div class="financial-status-subtitle">Purchases on credit</div>
+            </div>
+        `;
+    }
+    
+    if (totalPrepaid > 0) {
+        html += `
+            <div class="financial-status-card">
+                <div class="financial-status-label">Prepayments Made</div>
+                <div class="financial-status-value positive">KSh ${totalPrepaid.toLocaleString()}</div>
+                <div class="financial-status-subtitle">Advance payments</div>
+            </div>
+        `;
+    }
+    
+    if (totalOwed > 0 || totalPrepaid > 0) {
+        const balanceClass = netBalance > 0 ? 'positive' : netBalance < 0 ? 'negative' : 'neutral';
+        const balanceLabel = netBalance > 0 ? 'Credit Balance' : netBalance < 0 ? 'Debt Balance' : 'Balanced';
+        
+        html += `
+            <div class="financial-status-card">
+                <div class="financial-status-label">${balanceLabel}</div>
+                <div class="financial-status-value ${balanceClass}">KSh ${Math.abs(netBalance).toLocaleString()}</div>
+                <div class="financial-status-subtitle">${netBalance > 0 ? 'Customer has credit' : netBalance < 0 ? 'Customer owes' : 'No outstanding balance'}</div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+/* ============================================================
+   ANALYSIS TABS SETUP
+   ============================================================ */
+
+function setupAnalysisTabs() {
+    const tabs = document.querySelectorAll('.analysis-tab');
+    const tabContents = document.querySelectorAll('.analysis-tab-content');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tabContents.forEach(tc => tc.classList.remove('active'));
+            
+            tab.classList.add('active');
+            
+            const tabName = tab.dataset.analysisTab;
+            const content = document.getElementById(`${tabName}-analysis-tab`);
+            if (content) {
+                content.classList.add('active');
+            }
+        });
+    });
+}
+
 // Analytics View
 async function loadAnalyticsView() {
     showView('analytics-view');

@@ -399,33 +399,217 @@
         </div>
 
         <!-- All Clients View -->
-        <div id="all-clients-view" class="view-container" style="display: none;">
-            <h2 class="view-title">All Clients</h2>
-            <div class="card">
-                <div class="filter-group">
-                    <select id="client-shop-filter" class="filter-select">
-                        <option value="">All Shops</option>
-                    </select>
-                    <input type="date" id="client-date-filter" class="date-input">
+<div id="all-clients-view" class="view-container" style="display: none;">
+    <h2 class="view-title">All Clients</h2>
+    
+    <!-- Tab Navigation -->
+    <div class="client-tabs">
+        <button class="client-tab active" data-tab="by-date">📅 By Date</button>
+        <button class="client-tab" data-tab="all-clients">👥 All Clients</button>
+    </div>
+    
+    <!-- BY DATE TAB (Original functionality) -->
+    <div id="by-date-tab" class="client-tab-content active">
+        <div class="card">
+            <div class="filter-group">
+                <select id="client-shop-filter" class="filter-select">
+                    <option value="">All Shops</option>
+                </select>
+                <input type="date" id="client-date-filter" class="date-input">
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Client Name</th>
+                            <th>Phone Number</th>
+                            <th>Feed Type</th>
+                            <th>Bags</th>
+                            <th>Amount Paid</th>
+                            <th>Shop</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="all-clients-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ALL CLIENTS TAB (New functionality) -->
+    <div id="all-clients-tab" class="client-tab-content" style="display: none;">
+        <div class="card">
+            <!-- Search Bar -->
+            <div class="client-search-container">
+                <input 
+                    type="text" 
+                    id="client-search-input" 
+                    class="client-search-input" 
+                    placeholder="🔍 Search clients by name..."
+                    autocomplete="off">
+                <button id="clear-search-btn" class="btn-secondary" style="display: none;">✕ Clear</button>
+            </div>
+            
+            <!-- Results Summary -->
+            <div id="search-results-summary" class="search-results-summary" style="display: none;">
+                <span id="search-results-text"></span>
+            </div>
+            
+            <!-- Clients Table -->
+            <div class="table-container">
+                <table class="data-table" id="all-clients-table">
+                    <thead>
+                        <tr>
+                            <th>Client Name</th>
+                            <th>Phone Number</th>
+                            <th>Total Transactions</th>
+                            <th>Total Spent</th>
+                            <th>Shops</th>
+                            <th>First Purchase</th>
+                            <th>Last Purchase</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="all-clients-summary-body">
+                        <tr>
+                            <td colspan="8" style="text-align: center; padding: 40px; color: #999;">
+                                Loading clients...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CLIENT ANALYSIS VIEW (New dedicated view) -->
+<div id="client-analysis-view" class="view-container" style="display: none;">
+    <!-- Back Button -->
+    <div style="margin-bottom: 20px;">
+        <button id="back-to-clients-btn" class="btn-secondary">← Back to All Clients</button>
+    </div>
+    
+    <!-- Client Header Card -->
+    <div class="client-analysis-header card">
+        <div class="client-profile-section">
+            <div class="client-avatar" id="client-avatar"></div>
+            <div class="client-header-info">
+                <h2 id="client-name-header" style="margin: 0; color: #2e7d32;">Client Name</h2>
+                <p id="client-phone-header" style="margin: 5px 0; color: #666;">+254 XXX XXX XXX</p>
+                <div class="client-badges" id="client-badges"></div>
+            </div>
+        </div>
+        <div class="client-quick-stats">
+            <div class="quick-stat-card">
+                <div class="quick-stat-value" id="total-spent-stat">KSh 0</div>
+                <div class="quick-stat-label">Total Spent</div>
+            </div>
+            <div class="quick-stat-card">
+                <div class="quick-stat-value" id="total-transactions-stat">0</div>
+                <div class="quick-stat-label">Transactions</div>
+            </div>
+            <div class="quick-stat-card">
+                <div class="quick-stat-value" id="customer-since-stat">--</div>
+                <div class="quick-stat-label">Customer Since</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Analysis Tabs -->
+    <div class="analysis-tabs">
+        <button class="analysis-tab active" data-analysis-tab="overview">📊 Overview</button>
+        <button class="analysis-tab" data-analysis-tab="history">📜 Purchase History</button>
+        <button class="analysis-tab" data-analysis-tab="insights">💡 Insights</button>
+    </div>
+    
+    <!-- OVERVIEW TAB -->
+    <div id="overview-analysis-tab" class="analysis-tab-content active">
+        <!-- Customer Behavior Summary -->
+        <div class="card">
+            <h3 class="card-title">🎯 Customer Behavior Profile</h3>
+            <div class="behavior-grid">
+                <div class="behavior-card">
+                    <div class="behavior-icon">💰</div>
+                    <div class="behavior-label">Customer Type</div>
+                    <div class="behavior-value" id="customer-type">Regular</div>
                 </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Client Name</th>
-                                <th>Phone Number</th>
-                                <th>Feed Type</th>
-                                <th>Bags</th>
-                                <th>Amount Paid</th>
-                                <th>Shop</th>
-                                <th>Date</th>
-                            </tr>
-                        </thead>
-                        <tbody id="all-clients-body"></tbody>
-                    </table>
+                <div class="behavior-card">
+                    <div class="behavior-icon">📈</div>
+                    <div class="behavior-label">Payment Pattern</div>
+                    <div class="behavior-value" id="payment-pattern">Cash</div>
+                </div>
+                <div class="behavior-card">
+                    <div class="behavior-icon">⭐</div>
+                    <div class="behavior-label">Loyalty Score</div>
+                    <div class="behavior-value" id="loyalty-score">--</div>
+                </div>
+                <div class="behavior-card">
+                    <div class="behavior-icon">📍</div>
+                    <div class="behavior-label">Preferred Shop</div>
+                    <div class="behavior-value" id="preferred-shop">--</div>
                 </div>
             </div>
         </div>
+        
+        <!-- Charts Row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <!-- Purchase Trend Chart -->
+            <div class="card">
+                <h3 class="card-title">📈 Purchase Trend</h3>
+                <canvas id="client-purchase-trend-chart" style="max-height: 300px;"></canvas>
+            </div>
+            
+            <!-- Product Preference Chart -->
+            <div class="card">
+                <h3 class="card-title">🎯 Product Preferences</h3>
+                <canvas id="client-product-preference-chart" style="max-height: 300px;"></canvas>
+            </div>
+        </div>
+        
+        <!-- Payment Method Breakdown -->
+        <div class="card">
+            <h3 class="card-title">💳 Payment Method Analysis</h3>
+            <div style="max-width: 400px; margin: 0 auto;">
+                <canvas id="client-payment-method-chart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- HISTORY TAB -->
+    <div id="history-analysis-tab" class="analysis-tab-content" style="display: none;">
+        <div class="card">
+            <h3 class="card-title">📜 Complete Transaction History</h3>
+            
+            <!-- Timeline Filter -->
+            <div class="filter-group" style="margin-bottom: 20px;">
+                <select id="history-filter" class="filter-select">
+                    <option value="all">All Time</option>
+                    <option value="30">Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                    <option value="180">Last 6 Months</option>
+                </select>
+            </div>
+            
+            <!-- Transaction Timeline -->
+            <div id="transaction-timeline" class="transaction-timeline"></div>
+        </div>
+    </div>
+    
+    <!-- INSIGHTS TAB -->
+    <div id="insights-analysis-tab" class="analysis-tab-content" style="display: none;">
+        <div class="card">
+            <h3 class="card-title">💡 Smart Insights & Recommendations</h3>
+            <div id="client-insights" class="insights-container"></div>
+        </div>
+        
+        <!-- Financial Status -->
+        <div class="card">
+            <h3 class="card-title">💰 Financial Status</h3>
+            <div id="financial-status" class="financial-status-grid"></div>
+        </div>
+    </div>
+</div>
 
         <!-- Analytics View -->
         <div id="analytics-view" class="view-container" style="display: none;">

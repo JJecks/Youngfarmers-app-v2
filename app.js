@@ -1906,10 +1906,6 @@ async function checkCreditorToDebtorTransfer(creditorName, releaseAmount) {
     } catch (error) {
         console.error('Error checking creditor to debtor transfer:', error);
     }
-}
-
-// Check if debtor overpaid and needs to transfer to creditors
-
 if (balance < 0) {
     const debt = Math.abs(balance);
     showToast(`${creditorName} has overspent by KSh ${debt.toLocaleString()}. Transferred to Debtors page.`, 'success');
@@ -1928,6 +1924,9 @@ if (balance < 0) {
         await loadCreditorsView();
     }
 }
+}
+
+// Check if debtor overpaid and needs to transfer to creditors
 
 async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, date) {
     try {
@@ -2016,12 +2015,6 @@ if (shopDoc.exists()) {
     } catch (error) {
         console.error('Error checking debtor to creditor transfer:', error);
     }
-}
-
-// Make functions globally available
-window.checkCreditorToDebtorTransfer = checkCreditorToDebtorTransfer;
-window.checkDebtorToCreditorTransfer = checkDebtorToCreditorTransfer;
-
 showToast(`${debtorName} overpaid by KSh ${overpayment.toLocaleString()}. Transferred to Creditors page and recorded as prepayment sale.`, 'success');
 
 // Auto-refresh the current view if user is on Debtors or Creditors page
@@ -2037,6 +2030,11 @@ if (creditorsView && creditorsView.style.display !== 'none') {
     // Refresh creditors view  
     await loadCreditorsView();
 }
+}
+
+// Make functions globally available
+window.checkCreditorToDebtorTransfer = checkCreditorToDebtorTransfer;
+window.checkDebtorToCreditorTransfer = checkDebtorToCreditorTransfer;
 
 async function loadTotalSalesView() {
     showView('total-sales-view');

@@ -1909,6 +1909,26 @@ async function checkCreditorToDebtorTransfer(creditorName, releaseAmount) {
 }
 
 // Check if debtor overpaid and needs to transfer to creditors
+
+if (balance < 0) {
+    const debt = Math.abs(balance);
+    showToast(`${creditorName} has overspent by KSh ${debt.toLocaleString()}. Transferred to Debtors page.`, 'success');
+    
+    // Auto-refresh the current view if user is on Debtors or Creditors page
+    const debtorsView = document.getElementById('debtors-view');
+    const creditorsView = document.getElementById('creditors-view');
+
+    if (debtorsView && debtorsView.style.display !== 'none') {
+        // Refresh debtors view
+        await loadDebtorsView();
+    }
+
+    if (creditorsView && creditorsView.style.display !== 'none') {
+        // Refresh creditors view  
+        await loadCreditorsView();
+    }
+}
+
 async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, date) {
     try {
         // Calculate total debt
@@ -1954,26 +1974,41 @@ async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, da
         if (balance > 0) {
             const overpayment = balance;
             
-            // Record the overpayment as a prepayment (which counts as a sale)
-            const shopDocRef = doc(db, 'shops', shop, 'daily', date);
-            const shopDoc = await getDoc(shopDocRef);
-            const existingData = shopDoc.exists() ? shopDoc.data() : {};
-            const transactionId = Date.now().toString();
-            
-            const existingPrepayments = existingData.prepayments || {};
-            await setDoc(shopDocRef, {
-                ...existingData,
-                prepayments: {
-                    ...existingPrepayments,
-                    [transactionId]: {
-                        clientName: debtorName,
-                        phoneNumber: 'From Debt Overpayment',
-                        amountPaid: overpayment,
-                        timestamp: new Date().toISOString(),
-                        note: 'Auto-generated from debt overpayment'
-                    }
-                }
-            });
+// Record the overpayment as a prepayment (which counts as a sale)
+const shopDocRef = doc(db, 'shops', shop, 'daily', date);
+const shopDoc = await getDoc(shopDocRef);
+const transactionId = Date.now().toString();
+
+if (shopDoc.exists()) {
+    const existingData = shopDoc.data();
+    const existingPrepayments = existingData.prepayments || {};
+    
+    await updateDoc(shopDocRef, {
+        prepayments: {
+            ...existingPrepayments,
+            [transactionId]: {
+                clientName: debtorName,
+                phoneNumber: 'From Debt Overpayment',
+                amountPaid: overpayment,
+                timestamp: new Date().toISOString(),
+                note: 'Auto-generated from debt overpayment'
+            }
+        }
+    });
+} else {
+    // Create new document if it doesn't exist
+    await setDoc(shopDocRef, {
+        prepayments: {
+            [transactionId]: {
+                clientName: debtorName,
+                phoneNumber: 'From Debt Overpayment',
+                amountPaid: overpayment,
+                timestamp: new Date().toISOString(),
+                note: 'Auto-generated from debt overpayment'
+            }
+        }
+    });
+}
             
             showToast(`${debtorName} overpaid by KSh ${overpayment.toLocaleString()}. Transferred to Creditors page and recorded as prepayment sale.`, 'success');
         }
@@ -1986,6 +2021,22 @@ async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, da
 // Make functions globally available
 window.checkCreditorToDebtorTransfer = checkCreditorToDebtorTransfer;
 window.checkDebtorToCreditorTransfer = checkDebtorToCreditorTransfer;
+
+showToast(`${debtorName} overpaid by KSh ${overpayment.toLocaleString()}. Transferred to Creditors page and recorded as prepayment sale.`, 'success');
+
+// Auto-refresh the current view if user is on Debtors or Creditors page
+const currentView = document.getElementById('debtors-view');
+const creditorsView = document.getElementById('creditors-view');
+
+if (currentView && currentView.style.display !== 'none') {
+    // Refresh debtors view
+    await loadDebtorsView();
+}
+
+if (creditorsView && creditorsView.style.display !== 'none') {
+    // Refresh creditors view  
+    await loadCreditorsView();
+}
 
 async function loadTotalSalesView() {
     showView('total-sales-view');
